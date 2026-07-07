@@ -5,7 +5,8 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 ## What It Does
 
 - Accepts multiple label files in one batch.
-- Supports image upload through browser OCR and text upload for quick reviewer testing.
+- Uses an optional OpenAI vision extractor for image labels, with browser OCR fallback when the API route is unavailable.
+- Supports text upload for quick reviewer testing.
 - Compares extracted label text with application fields for brand, class/type, ABV, net contents, bottler/producer, country of origin, and the government warning.
 - Returns a clear `Ready`, `Review`, or `Reject` decision with field-level explanations.
 - Includes sample labels and CSV export for reviewer handoff.
@@ -28,15 +29,21 @@ npm run build
 
 ## Deployment
 
-This is a static Vite app and can be deployed to Vercel, Netlify, Azure Static Web Apps, or any static host.
+The front end is a Vite app. The optional `/api/extract-label` route is written as a Vercel-style serverless function so the OpenAI API key stays server-side.
 
 - Build command: `npm run build`
 - Output directory: `dist`
-- No server secrets are required.
+- Optional environment variables:
+  - `OPENAI_API_KEY`: enables the vision extraction endpoint.
+  - `OPENAI_EXTRACTION_MODEL`: defaults to `gpt-5.5`.
+
+If the serverless route is not deployed or `OPENAI_API_KEY` is not configured, the app still works through local OCR fallback and pasted text.
 
 ## Technical Approach
 
-- `src/lib/ocr.ts` wraps Tesseract.js so OCR runs in the browser without sending label images to a third-party service.
+- `api/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs to produce schema-constrained extraction JSON.
+- `src/lib/aiExtraction.ts` tries the server-side vision extractor first, then falls back cleanly.
+- `src/lib/ocr.ts` wraps Tesseract.js so fallback OCR runs in the browser without sending label images to a third-party service.
 - `src/lib/verification.ts` contains the deterministic review engine. The government warning is checked strictly; routine field matches allow limited fuzziness for casing and punctuation.
 - `src/App.tsx` provides the agent-facing workflow: application record, upload queue, sample batch, status summary, explanations, raw OCR text, and CSV export.
 - `public/samples/` contains two generated sample labels: one compliant and one intentionally defective.
@@ -46,6 +53,6 @@ The health warning rule is based on TTB guidance for beverage alcohol labels, in
 ## Assumptions And Tradeoffs
 
 - This prototype does not persist files, OCR text, or review results.
-- Browser OCR performance depends on image quality and the first Tesseract worker load. The sample text path demonstrates the review engine instantly; production could add a server-side vision model behind the same verifier.
+- Vision extraction is preferred for stylized fonts, curved labels, glare, and non-standard layouts. OCR remains as a resilience path for network-blocked environments.
 - OCR text cannot reliably prove visual formatting such as bold weight or minimum type size. The prototype checks exact warning wording and uppercase prefix, then documents visual-format verification as a production extension.
 - PDF and COLA integration are out of scope for this prototype.

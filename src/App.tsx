@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import './App.css'
 import { SAMPLE_LABELS } from './data/sampleLabels'
+import { extractWithOpenAI } from './lib/aiExtraction'
 import { recognizeLabelFile, shutdownOcrWorker } from './lib/ocr'
 import {
   DEFAULT_APPLICATION,
@@ -186,16 +187,33 @@ function App() {
       })
 
       try {
-        const ocrOutput = item.rawText
-          ? { text: item.rawText, confidence: 100 }
-          : await recognizeLabelFile(item.file as File, (progress) => {
+        let extracted = item.rawText ? extractFields(item.rawText, 100) : undefined
+
+        if (!extracted) {
+          try {
+            extracted = await extractWithOpenAI(item.file as File, (progress) => {
               updateItem(item.id, {
                 progress: Math.max(progress.progress, 0.05),
                 progressText: progress.status,
               })
             })
+          } catch {
+            updateItem(item.id, {
+              progress: 0.1,
+              progressText: 'Using local OCR fallback',
+            })
 
-        const extracted = extractFields(ocrOutput.text, ocrOutput.confidence)
+            const ocrOutput = await recognizeLabelFile(item.file as File, (progress) => {
+              updateItem(item.id, {
+                progress: Math.max(progress.progress, 0.12),
+                progressText: progress.status,
+              })
+            })
+
+            extracted = extractFields(ocrOutput.text, ocrOutput.confidence)
+          }
+        }
+
         const result = verifyLabel(extracted, application, performance.now() - startedAt)
 
         updateItem(item.id, {
@@ -295,7 +313,8 @@ function App() {
           </div>
         </div>
         <div className="topbar-status" aria-label="System status">
-          <span>Local OCR</span>
+          <span>AI extraction</span>
+          <span>OCR fallback</span>
           <span>No document storage</span>
           <span>Batch queue</span>
         </div>
