@@ -57,7 +57,7 @@ const UPLOAD_ACCEPT =
 const statusCopy: Record<ReviewStatus, string> = {
   ready: 'Ready',
   review: 'Review',
-  reject: 'Reject',
+  missing: 'Missing',
 }
 
 function createId() {
@@ -265,7 +265,7 @@ function App() {
     const completed = items.filter((item) => item.result || item.status === 'error')
     const ready = reviewed.filter((item) => item.result?.status === 'ready').length
     const review = reviewed.filter((item) => item.result?.status === 'review').length
-    const reject = reviewed.filter((item) => item.result?.status === 'reject').length
+    const missing = reviewed.filter((item) => item.result?.status === 'missing').length
     const averageMs =
       reviewed.reduce((sum, item) => sum + (item.result?.durationMs || 0), 0) /
       Math.max(reviewed.length, 1)
@@ -278,7 +278,7 @@ function App() {
       reviewed: reviewed.length,
       ready,
       review,
-      reject,
+      missing,
       averageMs,
       etaMs: averageMs * (items.length - completed.length),
     }
@@ -595,7 +595,7 @@ function App() {
         <Metric label="Queued" value={stats.queued} />
         <Metric label="Ready" value={stats.ready} tone="ready" />
         <Metric label="Review" value={stats.review} tone="review" />
-        <Metric label="Reject" value={stats.reject} tone="reject" />
+        <Metric label="Missing" value={stats.missing} tone="missing" />
         <Metric label="ETA" value={formatDuration(stats.etaMs)} />
         <Metric label="Avg time" value={formatDuration(stats.averageMs)} />
       </section>
@@ -765,7 +765,7 @@ function App() {
           </div>
 
           <div className="filter-row" aria-label="Result filters">
-            {(['all', 'ready', 'review', 'reject'] as ResultFilter[]).map((filter) => (
+            {(['all', 'ready', 'review', 'missing'] as ResultFilter[]).map((filter) => (
               <button
                 type="button"
                 key={filter}
@@ -938,7 +938,7 @@ function StatusPill({ item }: { item: LabelItem }) {
 
   if (item.status === 'error') {
     return (
-      <span className="status-pill status-pill--reject">
+      <span className="status-pill status-pill--missing">
         <XCircle size={16} />
         Error
       </span>

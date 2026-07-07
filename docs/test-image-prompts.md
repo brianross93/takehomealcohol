@@ -155,7 +155,7 @@ Make GOVERNMENT WARNING: all caps and bold. Do not add or change any words.
 ## 08 Bad ABV
 
 Filename: `08-bad-abv-old-tom.png`
-Expected result: `Reject`
+Expected result: `Review`
 Reason: the application CSV says `45% Alc./Vol. (90 Proof)`, but this label says `40% Alc./Vol. (80 Proof)`.
 
 Prompt:
@@ -177,7 +177,7 @@ Make GOVERNMENT WARNING: all caps and bold. Do not add or change any words.
 ## 09 Bad Net Contents
 
 Filename: `09-bad-net-contents-sierra.png`
-Expected result: `Reject`
+Expected result: `Review`
 Reason: the application CSV says `750 mL`, but this label says `700 mL`.
 
 Prompt:
@@ -199,7 +199,7 @@ Make GOVERNMENT WARNING: all caps and bold. Do not add or change any words.
 ## 10 Bad Warning Wording
 
 Filename: `10-bad-warning-copper-rail.png`
-Expected result: `Reject`
+Expected result: `Review`
 Reason: the required government warning is present-looking but not word-for-word exact.
 
 Prompt:

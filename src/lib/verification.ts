@@ -1,8 +1,8 @@
 export type BeverageType = 'Distilled Spirits' | 'Wine' | 'Malt Beverage'
 
-export type CheckStatus = 'pass' | 'warn' | 'fail'
+export type CheckStatus = 'pass' | 'warn' | 'missing'
 
-export type ReviewStatus = 'ready' | 'review' | 'reject'
+export type ReviewStatus = 'ready' | 'review' | 'missing'
 
 export type ApplicationFields = {
   beverageType: BeverageType
@@ -224,14 +224,14 @@ function compareProofConsistency(found: string | undefined, rawText: string): Ve
     label: 'ABV/proof consistency',
     expected: `${alcohol.abv}% ABV should be about ${expectedProof.toFixed(1)} proof`,
     found: `${alcohol.abv}% ABV and ${alcohol.proof} proof`,
-    status: 'fail',
+    status: 'warn',
     score: 0,
-    message: 'Printed proof does not match the printed alcohol percentage.',
+    message: 'Printed proof does not match the printed alcohol percentage; agent review required.',
   }
 }
 
 function statusFromChecks(checks: VerificationCheck[]): ReviewStatus {
-  if (checks.some((check) => check.status === 'fail')) return 'reject'
+  if (checks.some((check) => check.status === 'missing')) return 'missing'
   if (checks.some((check) => check.status === 'warn')) return 'review'
   return 'ready'
 }
@@ -242,9 +242,9 @@ function missingCheck(id: string, label: string, expected: string): Verification
     label,
     expected,
     found: 'Not found',
-    status: 'fail',
+    status: 'missing',
     score: 0,
-    message: 'No readable match was found on the label.',
+    message: 'Required field was not found on the label; agent review required.',
   }
 }
 
@@ -319,9 +319,9 @@ function compareTextField(
     label,
     expected,
     found: candidate,
-    status: 'fail',
+    status: 'warn',
     score,
-    message: 'Label text does not match the application field.',
+    message: 'Label text is present but does not match the application field; agent review required.',
   }
 }
 
@@ -361,12 +361,12 @@ function compareAlcohol(expected: string, found: string | undefined): Verificati
     label: 'Alcohol content',
     expected,
     found: found || String(foundAbv),
-    status: delta <= 0.5 ? 'warn' : 'fail',
+    status: 'warn',
     score: boundedScore(1 - delta / Math.max(expectedAbv, foundAbv)),
     message:
       delta <= 0.5
         ? 'ABV is close but should be reviewed.'
-        : 'ABV differs from the application.',
+        : 'ABV is present but differs from the application; agent review required.',
   }
 }
 
@@ -406,12 +406,12 @@ function compareNetContents(expected: string, found: string | undefined): Verifi
     label: 'Net contents',
     expected,
     found: found || `${Math.round(foundMl)} mL`,
-    status: delta <= 10 ? 'warn' : 'fail',
+    status: 'warn',
     score: boundedScore(1 - delta / Math.max(expectedMl, foundMl)),
     message:
       delta <= 10
         ? 'Net contents are close but should be reviewed.'
-        : 'Net contents differ from the application.',
+        : 'Net contents are present but differ from the application; agent review required.',
   }
 }
 
@@ -443,9 +443,9 @@ function compareWarning(rawText: string, warningText: string | undefined): Verif
       label: 'Government warning',
       expected: STANDARD_WARNING,
       found,
-      status: 'fail',
+      status: 'warn',
       score: 0.4,
-      message: 'Warning prefix must be uppercase: GOVERNMENT WARNING:',
+      message: 'Warning prefix is present but should be uppercase: GOVERNMENT WARNING:.',
     }
   }
 
@@ -455,9 +455,9 @@ function compareWarning(rawText: string, warningText: string | undefined): Verif
       label: 'Government warning',
       expected: STANDARD_WARNING,
       found,
-      status: 'fail',
+      status: 'warn',
       score: 0.72,
-      message: 'Warning wording matches, but casing differs from the required statement.',
+      message: 'Warning wording appears present, but casing differs from the required statement.',
     }
   }
 
@@ -466,9 +466,9 @@ function compareWarning(rawText: string, warningText: string | undefined): Verif
     label: 'Government warning',
     expected: STANDARD_WARNING,
     found,
-    status: 'fail',
+    status: 'warn',
     score: textSimilarity(found, STANDARD_WARNING),
-    message: 'Warning text is present but not word-for-word exact.',
+    message: 'Warning text is present but not word-for-word exact; agent review required.',
   }
 }
 

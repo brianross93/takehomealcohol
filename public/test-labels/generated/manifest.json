@@ -30,7 +30,7 @@
   {
     "id": "03-title-case-warning",
     "file": "/test-labels/generated/03-title-case-warning.png",
-    "expectedStatus": "reject",
+    "expectedStatus": "review",
     "application": {
       "brandName": "OLD TOM DISTILLERY",
       "classType": "Kentucky Straight Bourbon Whiskey",
@@ -44,7 +44,7 @@
   {
     "id": "04-wrong-abv",
     "file": "/test-labels/generated/04-wrong-abv.png",
-    "expectedStatus": "reject",
+    "expectedStatus": "review",
     "application": {
       "brandName": "OLD TOM DISTILLERY",
       "classType": "Kentucky Straight Bourbon Whiskey",
@@ -58,7 +58,7 @@
   {
     "id": "05-wrong-net-contents",
     "file": "/test-labels/generated/05-wrong-net-contents.png",
-    "expectedStatus": "reject",
+    "expectedStatus": "review",
     "application": {
       "brandName": "OLD TOM DISTILLERY",
       "classType": "Kentucky Straight Bourbon Whiskey",
@@ -72,7 +72,7 @@
   {
     "id": "06-missing-warning",
     "file": "/test-labels/generated/06-missing-warning.png",
-    "expectedStatus": "reject",
+    "expectedStatus": "missing",
     "application": {
       "brandName": "OLD TOM DISTILLERY",
       "classType": "Kentucky Straight Bourbon Whiskey",
@@ -156,7 +156,7 @@
   {
     "id": "12-bad-warning-wording",
     "file": "/test-labels/generated/12-bad-warning-wording.png",
-    "expectedStatus": "reject",
+    "expectedStatus": "review",
     "application": {
       "brandName": "OLD TOM DISTILLERY",
       "classType": "Kentucky Straight Bourbon Whiskey",

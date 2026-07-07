@@ -116,8 +116,8 @@ h2 {
   color: var(--review);
 }
 
-.metric--reject strong {
-  color: var(--reject);
+.metric--missing strong {
+  color: var(--missing);
 }
 
 .workspace-grid {
@@ -268,8 +268,8 @@ button:disabled {
 }
 
 .danger:hover:not(:disabled) {
-  border-color: var(--reject);
-  color: var(--reject);
+  border-color: var(--missing);
+  color: var(--missing);
 }
 
 .upload-grid {
@@ -391,8 +391,8 @@ button:disabled {
   border-left-color: var(--review);
 }
 
-.result-item--reject {
-  border-left-color: var(--reject);
+.result-item--missing {
+  border-left-color: var(--missing);
 }
 
 .result-summary {
@@ -441,7 +441,7 @@ button:disabled {
 
 .error-text {
   margin-top: 6px;
-  color: var(--reject);
+  color: var(--missing);
   font-size: 0.88rem;
 }
 
@@ -502,10 +502,10 @@ button:disabled {
   background: var(--review-soft);
 }
 
-.status-pill--reject {
-  border-color: color-mix(in srgb, var(--reject) 35%, var(--border));
-  color: var(--reject);
-  background: var(--reject-soft);
+.status-pill--missing {
+  border-color: color-mix(in srgb, var(--missing) 35%, var(--border));
+  color: var(--missing);
+  background: var(--missing-soft);
 }
 
 .result-meta {
@@ -554,8 +554,8 @@ button:disabled {
   color: var(--review);
 }
 
-.check-row--fail .check-status {
-  color: var(--reject);
+.check-row--missing .check-status {
+  color: var(--missing);
 }
 
 .check-row strong {

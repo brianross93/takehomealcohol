@@ -200,7 +200,7 @@ CASES = [
     },
     {
         "id": "03-title-case-warning",
-        "expectedStatus": "reject",
+        "expectedStatus": "review",
         "labelPatch": "warning prefix title case",
         "label": {
             "brandName": "OLD TOM|DISTILLERY",
@@ -214,7 +214,7 @@ CASES = [
     },
     {
         "id": "04-wrong-abv",
-        "expectedStatus": "reject",
+        "expectedStatus": "review",
         "label": {
             "brandName": "OLD TOM|DISTILLERY",
             "classType": "Kentucky Straight Bourbon Whiskey",
@@ -227,7 +227,7 @@ CASES = [
     },
     {
         "id": "05-wrong-net-contents",
-        "expectedStatus": "reject",
+        "expectedStatus": "review",
         "label": {
             "brandName": "OLD TOM|DISTILLERY",
             "classType": "Kentucky Straight Bourbon Whiskey",
@@ -240,7 +240,7 @@ CASES = [
     },
     {
         "id": "06-missing-warning",
-        "expectedStatus": "reject",
+        "expectedStatus": "missing",
         "label": {
             "brandName": "OLD TOM|DISTILLERY",
             "classType": "Kentucky Straight Bourbon Whiskey",
@@ -343,7 +343,7 @@ CASES = [
     },
     {
         "id": "12-bad-warning-wording",
-        "expectedStatus": "reject",
+        "expectedStatus": "review",
         "label": {
             "brandName": "OLD TOM|DISTILLERY",
             "classType": "Kentucky Straight Bourbon Whiskey",
