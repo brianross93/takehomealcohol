@@ -98,7 +98,8 @@ async function main() {
   }
 
   const args = parseArgs()
-  const model = process.env.OPENAI_EXTRACTION_MODEL || 'gpt-5.5'
+  const model = process.env.OPENAI_EXTRACTION_MODEL || 'gpt-5.4-mini'
+  const detail = args.get('detail') || process.env.OPENAI_IMAGE_DETAIL || 'low'
   const limit = Number(args.get('limit') || 0)
   const requestedFile = args.get('file')
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -115,7 +116,7 @@ async function main() {
       ? path.join(root, 'public', testCase.file)
       : path.resolve(root, testCase.file)
 
-    console.log(`Extracting ${testCase.id} with ${model}`)
+    console.log(`Extracting ${testCase.id} with ${model} (${detail} detail)`)
     const result = await openai.responses.create({
       model,
       reasoning: { effort: 'low' },
@@ -142,7 +143,7 @@ async function main() {
           role: 'user',
           content: [
             { type: 'input_text', text: `Extract fields from ${testCase.id}.` },
-            { type: 'input_image', image_url: await fileToDataUrl(filePath), detail: 'high' },
+            { type: 'input_image', image_url: await fileToDataUrl(filePath), detail },
           ],
         },
       ],

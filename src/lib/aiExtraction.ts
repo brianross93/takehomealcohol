@@ -21,13 +21,53 @@ type ExtractionProgress = {
   progress: number
 }
 
-function fileToDataUrl(file: File) {
+const EXTRACTION_IMAGE_WIDTH = 768
+const EXTRACTION_JPEG_QUALITY = 0.86
+
+function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error('Unable to read image file'))
     reader.onload = () => resolve(String(reader.result))
     reader.readAsDataURL(file)
   })
+}
+
+async function fileToDataUrl(file: File) {
+  if (typeof createImageBitmap !== 'function') {
+    return readFileAsDataUrl(file)
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file)
+    const scale = bitmap.width > EXTRACTION_IMAGE_WIDTH ? EXTRACTION_IMAGE_WIDTH / bitmap.width : 1
+    const width = Math.max(1, Math.round(bitmap.width * scale))
+    const height = Math.max(1, Math.round(bitmap.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+
+    const context = canvas.getContext('2d')
+    if (!context) {
+      bitmap.close()
+      return readFileAsDataUrl(file)
+    }
+
+    context.drawImage(bitmap, 0, 0, width, height)
+    bitmap.close()
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', EXTRACTION_JPEG_QUALITY)
+    })
+
+    if (!blob) return readFileAsDataUrl(file)
+
+    return readFileAsDataUrl(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+      type: 'image/jpeg',
+    }))
+  } catch {
+    return readFileAsDataUrl(file)
+  }
 }
 
 function valueOrUndefined(value: string | null | undefined) {
@@ -43,7 +83,7 @@ export async function extractWithOpenAI(
     throw new Error('OpenAI extraction only accepts image files')
   }
 
-  onProgress({ status: 'Preparing image', progress: 0.12 })
+  onProgress({ status: 'Optimizing image', progress: 0.12 })
   const imageDataUrl = await fileToDataUrl(file)
 
   onProgress({ status: 'Reading with vision model', progress: 0.34 })

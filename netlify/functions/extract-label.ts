@@ -33,6 +33,8 @@ type ModelExtraction = {
   notes: string[]
 }
 
+type ImageDetail = 'high' | 'low'
+
 const extractionSchema = {
   type: 'object',
   additionalProperties: false,
@@ -111,6 +113,10 @@ function jsonResponse(statusCode: number, payload: unknown): NetlifyResponse {
   }
 }
 
+function extractionDetail(): ImageDetail {
+  return process.env.OPENAI_IMAGE_DETAIL === 'high' ? 'high' : 'low'
+}
+
 export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' })
@@ -131,7 +137,7 @@ export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
     }
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-    const model = process.env.OPENAI_EXTRACTION_MODEL || 'gpt-5.5'
+    const model = process.env.OPENAI_EXTRACTION_MODEL || 'gpt-5.4-mini'
 
     const result = await openai.responses.create({
       model,
@@ -172,7 +178,7 @@ export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
             {
               type: 'input_image',
               image_url: imageDataUrl,
-              detail: 'high',
+              detail: extractionDetail(),
             },
           ],
         },

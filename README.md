@@ -1,6 +1,6 @@
 # Alcohol Label Verification
 
-Standalone prototype for reviewing alcohol beverage label artwork against application data. The app is designed around the take-home stakeholder notes: simple controls, batch review, fast feedback, no document storage, and firewall-friendly local processing.
+Standalone prototype for reviewing alcohol beverage label artwork against application data. The app is designed around the take-home stakeholder notes: simple controls, batch review, fast feedback, no document storage, and reliable vision extraction for stylized label artwork.
 
 ## What It Does
 
@@ -39,14 +39,15 @@ The front end is a Vite app and the `/api/extract-label` route is a Netlify Func
 - Functions directory: `netlify/functions`
 - Optional environment variables:
   - `OPENAI_API_KEY`: enables the vision extraction endpoint.
-  - `OPENAI_EXTRACTION_MODEL`: defaults to `gpt-5.5`.
+  - `OPENAI_EXTRACTION_MODEL`: defaults to `gpt-5.4-mini`.
+  - `OPENAI_IMAGE_DETAIL`: defaults to `low`; set to `high` if a deployment needs more visual detail and can tolerate slower calls.
 
 If the serverless function is not deployed or `OPENAI_API_KEY` is not configured, image extraction fails explicitly and can be retried after configuration is fixed. The app does not silently fall back to OCR.
 
 ## Technical Approach
 
 - `netlify/functions/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs to produce schema-constrained extraction JSON.
-- `src/lib/aiExtraction.ts` sends image labels to the server-side vision extractor and returns schema-constrained fields to the verifier.
+- `src/lib/aiExtraction.ts` downscales uploaded image labels to a 768px-wide JPEG before sending them to the server-side vision extractor, which keeps the single-label path closer to the five-second usability target.
 - `src/lib/verification.ts` contains the deterministic review engine. The government warning wording is checked strictly; routine field matches allow limited fuzziness for casing and punctuation and explain when a normalized match was accepted.
 - `src/App.tsx` provides the agent-facing workflow: application record, upload queue, sample batch, status summary, explanations, extracted label text, and CSV export.
 - `public/samples/` contains two generated sample labels: one compliant and one intentionally defective.
@@ -68,5 +69,6 @@ npm run test:extract:openai -- --limit=1
 
 - This prototype does not persist files, extracted label text, or review results.
 - Vision extraction is required for image labels. If a government network blocks the model endpoint, production should route to an approved internal or government cloud vision endpoint rather than silently degrading to conventional OCR.
+- Uploaded images are compressed for latency before extraction. Production should retain an optional high-detail retry path for edge cases such as very small print, severe glare, or unusually low-resolution source photos.
 - The vision extractor returns advisory fields for warning boldness, legibility, and unusually small/buried warning text. These advisories can send an otherwise passing label to `Review`, but final type-size and boldness calls should still be confirmed visually in production.
 - PDF and COLA integration are out of scope for this prototype.
