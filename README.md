@@ -4,7 +4,7 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 
 ## What It Does
 
-- Accepts multiple uploaded files in one batch.
+- Accepts multiple uploaded files in one batch for custom testing.
 - Uses OpenAI vision extraction for image labels because conventional OCR is unreliable on stylized label artwork; there is no OCR fallback in this prototype.
 - Extracts PNG, JPG, and WEBP label images; CSV uploads are treated as application-record imports.
 - PDF and HEIC/HEIF uploads surface explicit unsupported-format errors in this prototype instead of flowing into verification.
@@ -31,6 +31,8 @@ Open `https://alcoholclassifier.netlify.app`. The app starts with a provided rev
 4. Click `Accept` or `Reject` as the human decision. The app records that decision and moves to the next form.
 
 The provided packet is also available as `public/preloaded-submissions/application-records.csv` with matching images in `public/preloaded-submissions/`. Reviewers can clear the queue and click `Provided forms` to reload it. They can also upload their own CSV and images; the CSV `fileName` column should match the image filenames.
+
+The custom upload path is intentionally secondary to the assignment scenario. It is still useful for trying new labels: upload a label image with a matching CSV row, or enter expected values in the manual application form. The app then uses the same extractor and field checks against that supplied application data. Without application data, the tool can still surface label text and warning issues, but it cannot prove that brand, class/type, ABV, net contents, bottler, or country of origin match an application.
 
 ## Running Locally
 
@@ -74,9 +76,9 @@ If the serverless function is not deployed or `OPENAI_API_KEY` is not configured
 
 ## Batch Input Shape
 
-Single-label review uses the form on the left because it mirrors the current workflow: an agent has one application open and checks one label against it.
+Single-label custom review uses the form on the left because it mirrors the current workflow: an agent has one application open and checks one label against it.
 
-Batch review supports a CSV application import plus image uploads. The provided production demo packet uses that same mechanism: each row represents the submitted application form, and each matching image represents the submitted label artwork. CSV files can be uploaded through the main batch picker/dropzone or the dedicated `Import CSV` control. The CSV is keyed by image filename:
+Batch review supports a CSV application import plus image uploads. The provided production demo packet uses that same mechanism: each row represents the submitted application form, and each matching image represents the submitted label artwork. Custom CSV files can be uploaded through the main batch picker/dropzone or the dedicated `Import CSV` control. The CSV is keyed by image filename:
 
 ```csv
 fileName,brandName,classType,alcoholContent,netContents,bottlerName,bottlerAddress,countryOfOrigin,beverageType

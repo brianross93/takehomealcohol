@@ -888,7 +888,7 @@ function App() {
             <div>
               <div className="heading-line">
                 <Upload size={22} aria-hidden="true" />
-                <h2>Label batch</h2>
+                <h2>Custom upload</h2>
               </div>
             </div>
             <div className="action-row">
