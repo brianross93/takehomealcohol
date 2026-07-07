@@ -24,9 +24,21 @@ type ExtractionProgress = {
 const EXTRACTION_IMAGE_WIDTH = 768
 const EXTRACTION_JPEG_QUALITY = 0.86
 const MAX_EXTRACTION_ATTEMPTS = 3
+const EXTRACTION_TIMEOUT_MS = 20_000
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function timeoutError() {
+  const error = new Error('AI extraction timed out. Retry this label.')
+  error.name = 'ExtractionTimeoutError'
+  return error
+}
+
+function isRetryableFetchError(error: unknown) {
+  if (!(error instanceof Error)) return false
+  return error.name === 'AbortError' || error.name === 'ExtractionTimeoutError'
 }
 
 function retryAfterMs(response: Response, fallbackMs: number) {
@@ -91,20 +103,63 @@ function valueOrUndefined(value: string | null | undefined) {
   return trimmed ? trimmed : undefined
 }
 
+function hasReadableExtraction(payload: AiExtractionPayload) {
+  return Boolean(
+    valueOrUndefined(payload.rawText) ||
+      valueOrUndefined(payload.brandName) ||
+      valueOrUndefined(payload.classType) ||
+      valueOrUndefined(payload.alcoholContent) ||
+      valueOrUndefined(payload.netContents) ||
+      valueOrUndefined(payload.bottler) ||
+      valueOrUndefined(payload.countryOfOrigin) ||
+      valueOrUndefined(payload.warningText),
+  )
+}
+
+async function fetchExtraction(fileName: string, imageDataUrl: string) {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(timeoutError()), EXTRACTION_TIMEOUT_MS)
+
+  try {
+    return await fetch('/api/extract-label', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        fileName,
+        imageDataUrl,
+      }),
+    })
+  } catch (error) {
+    if (isRetryableFetchError(error)) throw timeoutError()
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
 async function requestExtraction(
   fileName: string,
   imageDataUrl: string,
   onProgress: (progress: ExtractionProgress) => void,
 ) {
   for (let attempt = 1; attempt <= MAX_EXTRACTION_ATTEMPTS; attempt += 1) {
-    const response = await fetch('/api/extract-label', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fileName,
-        imageDataUrl,
-      }),
-    })
+    let response: Response
+
+    try {
+      response = await fetchExtraction(fileName, imageDataUrl)
+    } catch (error) {
+      if (!isRetryableFetchError(error) || attempt === MAX_EXTRACTION_ATTEMPTS) {
+        throw error
+      }
+
+      onProgress({
+        status: `Waiting to retry extraction (${attempt + 1}/${MAX_EXTRACTION_ATTEMPTS})`,
+        progress: Math.min(0.34 + attempt * 0.08, 0.58),
+      })
+      await sleep(800 * 2 ** (attempt - 1))
+      continue
+    }
 
     if (response.ok) return response
 
@@ -139,6 +194,10 @@ export async function extractWithOpenAI(
   onProgress({ status: 'Reading with vision model', progress: 0.34 })
   const response = await requestExtraction(file.name, imageDataUrl, onProgress)
   const payload = (await response.json()) as AiExtractionPayload
+  if (!hasReadableExtraction(payload)) {
+    throw new Error('AI extraction returned no readable label text. Retry this label.')
+  }
+
   const rawText = payload.rawText || ''
   const confidence =
     typeof payload.confidence === 'number' ? Math.round(payload.confidence * 100) : 90
