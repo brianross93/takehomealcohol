@@ -5,6 +5,7 @@ import OpenAI from 'openai'
 const root = path.resolve(import.meta.dirname, '..')
 const manifestPath = path.join(root, 'public', 'test-labels', 'generated', 'manifest.json')
 const outPath = path.join(root, 'tmp', 'openai-extraction-results.json')
+const localEnvPath = path.join(root, '.env.local')
 
 const extractionSchema = {
   type: 'object',
@@ -56,7 +57,32 @@ async function fileToDataUrl(filePath) {
   return `data:${mimeFor(filePath)};base64,${bytes.toString('base64')}`
 }
 
+async function loadLocalEnv() {
+  try {
+    const contents = await fs.readFile(localEnvPath, 'utf8')
+    for (const line of contents.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+
+      const separator = trimmed.indexOf('=')
+      if (separator === -1) continue
+
+      const key = trimmed.slice(0, separator).trim()
+      const rawValue = trimmed.slice(separator + 1).trim()
+      const value = rawValue.replace(/^["']|["']$/g, '')
+
+      if (key && process.env[key] == null) {
+        process.env[key] = value
+      }
+    }
+  } catch (error) {
+    if (error && error.code !== 'ENOENT') throw error
+  }
+}
+
 async function main() {
+  await loadLocalEnv()
+
   if (!process.env.OPENAI_API_KEY) {
     console.error('OPENAI_API_KEY is required for this smoke test.')
     process.exitCode = 1
