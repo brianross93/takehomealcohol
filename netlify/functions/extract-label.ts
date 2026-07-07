@@ -1,9 +1,4 @@
 import OpenAI from 'openai'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-
-type JsonRequest = IncomingMessage & {
-  body?: unknown
-}
 
 type LabelExtractionPayload = {
   imageDataUrl?: string
@@ -67,44 +62,28 @@ const extractionSchema = {
   ],
 } as const
 
-function sendJson(response: ServerResponse, status: number, payload: unknown) {
-  response.statusCode = status
-  response.setHeader('Content-Type', 'application/json')
-  response.end(JSON.stringify(payload))
+function jsonResponse(status: number, payload: unknown) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
 }
 
-async function readJsonBody(request: JsonRequest): Promise<LabelExtractionPayload> {
-  if (request.body && typeof request.body === 'object') {
-    return request.body as LabelExtractionPayload
-  }
-
-  const chunks: Buffer[] = []
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-  }
-
-  const bodyText = Buffer.concat(chunks).toString('utf8')
-  return bodyText ? (JSON.parse(bodyText) as LabelExtractionPayload) : {}
-}
-
-export default async function handler(request: JsonRequest, response: ServerResponse) {
+export default async function handler(request: Request) {
   if (request.method !== 'POST') {
-    sendJson(response, 405, { error: 'Method not allowed' })
-    return
+    return jsonResponse(405, { error: 'Method not allowed' })
   }
 
   if (!process.env.OPENAI_API_KEY) {
-    sendJson(response, 503, { error: 'OPENAI_API_KEY is not configured' })
-    return
+    return jsonResponse(503, { error: 'OPENAI_API_KEY is not configured' })
   }
 
   try {
-    const payload = await readJsonBody(request)
+    const payload = (await request.json()) as LabelExtractionPayload
     const imageDataUrl = payload.imageDataUrl || ''
 
     if (!imageDataUrl.startsWith('data:image/')) {
-      sendJson(response, 400, { error: 'imageDataUrl must be an image data URL' })
-      return
+      return jsonResponse(400, { error: 'imageDataUrl must be an image data URL' })
     }
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -156,10 +135,14 @@ export default async function handler(request: JsonRequest, response: ServerResp
     })
 
     const parsed = JSON.parse(result.output_text) as ModelExtraction
-    sendJson(response, 200, parsed)
+    return jsonResponse(200, parsed)
   } catch (error) {
-    sendJson(response, 500, {
+    return jsonResponse(500, {
       error: error instanceof Error ? error.message : 'Label extraction failed',
     })
   }
+}
+
+export const config = {
+  path: '/api/extract-label',
 }

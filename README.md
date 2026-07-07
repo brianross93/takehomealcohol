@@ -27,21 +27,22 @@ npm run lint
 npm run build
 ```
 
-## Deployment
+## Netlify Deployment
 
-The front end is a Vite app. The optional `/api/extract-label` route is written as a Vercel-style serverless function so the OpenAI API key stays server-side.
+The front end is a Vite app and the `/api/extract-label` route is a Netlify Function. The OpenAI API key stays server-side.
 
 - Build command: `npm run build`
 - Output directory: `dist`
+- Functions directory: `netlify/functions`
 - Optional environment variables:
   - `OPENAI_API_KEY`: enables the vision extraction endpoint.
   - `OPENAI_EXTRACTION_MODEL`: defaults to `gpt-5.5`.
 
-If the serverless route is not deployed or `OPENAI_API_KEY` is not configured, the app still works through local OCR fallback and pasted text.
+If the serverless function is not deployed or `OPENAI_API_KEY` is not configured, the app still works through local OCR fallback and pasted text.
 
 ## Technical Approach
 
-- `api/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs to produce schema-constrained extraction JSON.
+- `netlify/functions/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs to produce schema-constrained extraction JSON.
 - `src/lib/aiExtraction.ts` tries the server-side vision extractor first, then falls back cleanly.
 - `src/lib/ocr.ts` wraps Tesseract.js so fallback OCR runs in the browser without sending label images to a third-party service.
 - `src/lib/verification.ts` contains the deterministic review engine. The government warning is checked strictly; routine field matches allow limited fuzziness for casing and punctuation.
