@@ -12,7 +12,7 @@ import {
   Upload,
   XCircle,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import './App.css'
 import { SAMPLE_LABELS } from './data/sampleLabels'
@@ -36,6 +36,8 @@ type LabelItem = {
   status: QueueStatus
   progress: number
   progressText: string
+  application?: ApplicationFields
+  applicationSource?: 'manual' | 'csv'
   file?: File
   rawText?: string
   previewUrl?: string
@@ -44,7 +46,9 @@ type LabelItem = {
 }
 
 const BEVERAGE_TYPES: BeverageType[] = ['Distilled Spirits', 'Wine', 'Malt Beverage']
-const BATCH_CONCURRENCY = 4
+const BATCH_CONCURRENCY = 5
+
+type ResultFilter = 'all' | ReviewStatus
 
 const statusCopy: Record<ReviewStatus, string> = {
   ready: 'Ready',
@@ -71,16 +75,110 @@ function csvEscape(value: string | number) {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
-function makeFileItem(file: File): LabelItem {
+function normalizeFileKey(fileName: string) {
+  return fileName.trim().toLowerCase()
+}
+
+function normalizeBeverageType(value: string | undefined): BeverageType {
+  const normalized = value?.trim().toLowerCase()
+  return BEVERAGE_TYPES.find((type) => type.toLowerCase() === normalized) || 'Distilled Spirits'
+}
+
+function normalizeCsvHeader(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function makeFileItem(
+  file: File,
+  applicationByFileName: Record<string, ApplicationFields>,
+): LabelItem {
   return {
     id: createId(),
     name: file.name,
     status: 'queued',
     progress: 0,
     progressText: 'Queued',
+    application: applicationByFileName[normalizeFileKey(file.name)],
+    applicationSource: applicationByFileName[normalizeFileKey(file.name)] ? 'csv' : undefined,
     file,
     previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
   }
+}
+
+function parseCsvRows(csv: string) {
+  const rows: string[][] = []
+  let row: string[] = []
+  let value = ''
+  let quoted = false
+
+  for (let index = 0; index < csv.length; index += 1) {
+    const char = csv[index]
+    const next = csv[index + 1]
+
+    if (char === '"' && quoted && next === '"') {
+      value += '"'
+      index += 1
+    } else if (char === '"') {
+      quoted = !quoted
+    } else if (char === ',' && !quoted) {
+      row.push(value.trim())
+      value = ''
+    } else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') index += 1
+      row.push(value.trim())
+      if (row.some(Boolean)) rows.push(row)
+      row = []
+      value = ''
+    } else {
+      value += char
+    }
+  }
+
+  row.push(value.trim())
+  if (row.some(Boolean)) rows.push(row)
+
+  return rows
+}
+
+function csvToApplications(csv: string) {
+  const rows = parseCsvRows(csv)
+  const [headerRow, ...dataRows] = rows
+  if (!headerRow?.length) return {}
+
+  const headers = headerRow.map(normalizeCsvHeader)
+  const headerIndex = new Map(headers.map((header, index) => [header, index]))
+
+  function read(row: string[], header: string) {
+    const index = headerIndex.get(normalizeCsvHeader(header))
+    return index === undefined ? '' : row[index] || ''
+  }
+
+  return dataRows.reduce<Record<string, ApplicationFields>>((applications, row) => {
+    const fileName = read(row, 'fileName')
+    if (!fileName) return applications
+
+    applications[normalizeFileKey(fileName)] = {
+      beverageType: normalizeBeverageType(read(row, 'beverageType')),
+      brandName: read(row, 'brandName'),
+      classType: read(row, 'classType'),
+      alcoholContent: read(row, 'alcoholContent'),
+      netContents: read(row, 'netContents'),
+      bottlerName: read(row, 'bottlerName'),
+      bottlerAddress: read(row, 'bottlerAddress'),
+      countryOfOrigin: read(row, 'countryOfOrigin'),
+    }
+
+    return applications
+  }, {})
+}
+
+function readTextFile(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Unable to read CSV file'))
+    reader.onload = () => resolve(String(reader.result))
+    reader.readAsText(file)
+  })
 }
 
 function App() {
@@ -88,6 +186,14 @@ function App() {
   const [items, setItems] = useState<LabelItem[]>([])
   const [pastedText, setPastedText] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
+  const [applicationByFileName, setApplicationByFileName] = useState<
+    Record<string, ApplicationFields>
+  >({})
+  const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
+
+  useEffect(() => {
+    void fetch('/api/extract-label', { method: 'HEAD' }).catch(() => undefined)
+  }, [])
 
   const stats = useMemo(() => {
     const completed = items.filter((item) => item.result)
@@ -101,13 +207,20 @@ function App() {
     return {
       total: items.length,
       queued: items.filter((item) => item.status === 'queued').length,
+      processing: items.filter((item) => item.status === 'processing').length,
       completed: completed.length,
       ready,
       review,
       reject,
       averageMs,
+      etaMs: averageMs * (items.length - completed.length),
     }
   }, [items])
+
+  const filteredItems = useMemo(() => {
+    if (resultFilter === 'all') return items
+    return items.filter((item) => item.result?.status === resultFilter)
+  }, [items, resultFilter])
 
   function updateApplication<Field extends keyof ApplicationFields>(
     field: Field,
@@ -133,13 +246,40 @@ function App() {
   }
 
   function addFiles(fileList: FileList | File[]) {
-    const nextItems = Array.from(fileList).map(makeFileItem)
+    const nextItems = Array.from(fileList).map((file) =>
+      makeFileItem(file, applicationByFileName),
+    )
     setItems((current) => [...current, ...nextItems])
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     if (event.target.files?.length) addFiles(event.target.files)
     event.target.value = ''
+  }
+
+  async function handleCsvChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    const csv = await readTextFile(file)
+    const importedApplications = csvToApplications(csv)
+
+    setApplicationByFileName((current) => ({
+      ...current,
+      ...importedApplications,
+    }))
+    setItems((current) =>
+      current.map((item) => ({
+        ...item,
+        application:
+          importedApplications[normalizeFileKey(item.name)] ||
+          item.application,
+        applicationSource: importedApplications[normalizeFileKey(item.name)]
+          ? 'csv'
+          : item.applicationSource,
+      })),
+    )
   }
 
   function handleDrop(event: DragEvent<HTMLLabelElement>) {
@@ -158,6 +298,8 @@ function App() {
         progress: 0,
         progressText: 'Queued',
         rawText: sample.rawText,
+        application: DEFAULT_APPLICATION,
+        applicationSource: 'manual' as const,
         previewUrl: sample.imagePath,
       })),
     ])
@@ -176,6 +318,8 @@ function App() {
         progress: 0,
         progressText: 'Queued',
         rawText: text,
+        application,
+        applicationSource: 'manual',
       },
     ])
     setPastedText('')
@@ -210,7 +354,11 @@ function App() {
           })
         }
 
-        const result = verifyLabel(extracted, application, performance.now() - startedAt)
+        const result = verifyLabel(
+          extracted,
+          item.application || application,
+          performance.now() - startedAt,
+        )
 
         updateItem(item.id, {
           status: 'complete',
@@ -249,7 +397,11 @@ function App() {
 
         return {
           ...item,
-          result: verifyLabel(item.result.extracted, application, item.result.durationMs),
+          result: verifyLabel(
+            item.result.extracted,
+            item.application || application,
+            item.result.durationMs,
+          ),
         }
       }),
     )
@@ -269,6 +421,7 @@ function App() {
         'overall_status',
         'overall_score',
         'duration_ms',
+        'application_source',
         'check',
         'check_status',
         'expected',
@@ -284,6 +437,7 @@ function App() {
           statusCopy[item.result.status],
           item.result.score.toFixed(3),
           Math.round(item.result.durationMs),
+          item.applicationSource || 'manual',
           check.label,
           check.status,
           check.expected,
@@ -322,11 +476,13 @@ function App() {
       </header>
 
       <section className="summary-grid" aria-label="Review summary">
-        <Metric label="Labels" value={stats.total} />
+        <Metric label="Total" value={stats.total} />
+        <Metric label="Done" value={`${stats.completed}/${stats.total}`} />
         <Metric label="Queued" value={stats.queued} />
         <Metric label="Ready" value={stats.ready} tone="ready" />
         <Metric label="Review" value={stats.review} tone="review" />
         <Metric label="Reject" value={stats.reject} tone="reject" />
+        <Metric label="ETA" value={formatDuration(stats.etaMs)} />
         <Metric label="Avg time" value={formatDuration(stats.averageMs)} />
       </section>
 
@@ -485,14 +641,41 @@ function App() {
             </div>
           </div>
 
+          <div className="batch-tools">
+            <label className="secondary-button csv-import">
+              <FileText size={18} />
+              Import CSV
+              <input type="file" accept=".csv,text/csv" onChange={handleCsvChange} />
+            </label>
+            <span>{Object.keys(applicationByFileName).length} application records</span>
+          </div>
+
+          <div className="filter-row" aria-label="Result filters">
+            {(['all', 'ready', 'review', 'reject'] as ResultFilter[]).map((filter) => (
+              <button
+                type="button"
+                key={filter}
+                className={`filter-button ${
+                  resultFilter === filter ? 'filter-button--active' : ''
+                }`}
+                onClick={() => setResultFilter(filter)}
+              >
+                {filter === 'all' ? 'All' : statusCopy[filter]}
+              </button>
+            ))}
+            <span>
+              Showing {filteredItems.length} of {items.length}
+            </span>
+          </div>
+
           <div className="result-list" aria-live="polite">
-            {items.length === 0 ? (
+            {filteredItems.length === 0 ? (
               <div className="empty-state">
                 <FileText size={28} aria-hidden="true" />
-                <p>No labels queued</p>
+                <p>{items.length === 0 ? 'No labels queued' : 'No matching labels'}</p>
               </div>
             ) : (
-              items.map((item) => (
+              filteredItems.map((item) => (
                 <ResultItem key={item.id} item={item} onRetry={retryItem} />
               ))
             )}
@@ -591,6 +774,7 @@ function ResultItem({
               {extractionSourceLabel(item.result.extracted.source)}{' '}
               {item.result.extracted.confidence.toFixed(0)}%
             </span>
+            <span>{item.applicationSource === 'csv' ? 'CSV record' : 'Manual record'}</span>
             <span>{formatDuration(item.result.durationMs)}</span>
           </div>
 

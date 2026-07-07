@@ -118,6 +118,14 @@ function extractionDetail(): ImageDetail {
 }
 
 export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
+  if (event.httpMethod === 'HEAD') {
+    return {
+      statusCode: 204,
+      headers: { 'Content-Type': 'application/json' },
+      body: '',
+    }
+  }
+
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' })
   }

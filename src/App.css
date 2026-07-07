@@ -79,7 +79,7 @@ h2 {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 1px;
   border-bottom: 1px solid var(--border);
   background: var(--border);
@@ -313,6 +313,49 @@ button:disabled {
 
 .text-entry button {
   justify-self: start;
+}
+
+.batch-tools,
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.batch-tools span,
+.filter-row span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.csv-import {
+  cursor: pointer;
+}
+
+.csv-import input {
+  display: none;
+}
+
+.filter-row {
+  justify-content: space-between;
+}
+
+.filter-button {
+  min-height: 34px;
+  border-color: var(--border-strong);
+  color: var(--muted);
+  background: var(--surface);
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
+.filter-button--active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .result-list {
@@ -571,10 +614,6 @@ button:disabled {
 }
 
 @media (max-width: 1080px) {
-  .summary-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .workspace-grid {
     grid-template-columns: 1fr;
   }
@@ -595,7 +634,6 @@ button:disabled {
     justify-content: flex-start;
   }
 
-  .summary-grid,
   .upload-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -635,7 +673,6 @@ button:disabled {
 }
 
 @media (max-width: 520px) {
-  .summary-grid,
   .upload-grid {
     grid-template-columns: 1fr;
   }

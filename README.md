@@ -6,7 +6,9 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 
 - Accepts multiple label files in one batch.
 - Uses OpenAI vision extraction for image labels because conventional OCR is unreliable on stylized label artwork.
-- Processes queued uploads with a small concurrency pool so large batches do not run strictly one-by-one.
+- Imports optional CSV application records keyed by label filename for larger batches.
+- Processes queued uploads with a small concurrency pool, retry/backoff for transient API limits, and per-item results as soon as each label finishes.
+- Filters completed rows to `Ready`, `Review`, or `Reject` so agents can focus on exceptions in large batches.
 - Supports manual pasted label text for quick reviewer testing.
 - Compares extracted label text with application fields for brand, class/type, ABV, net contents, bottler/producer, country of origin, and the government warning.
 - Returns a clear `Ready`, `Review`, or `Reject` decision with field-level explanations.
@@ -16,10 +18,10 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 
 ```bash
 npm install
-npm run dev
+netlify dev
 ```
 
-Open the local URL printed by Vite, usually `http://127.0.0.1:5173/`.
+Open the local URL printed by Netlify Dev, usually `http://127.0.0.1:8888/`. Plain `npm run dev` runs the Vite front end only; image extraction needs the Netlify Function route.
 
 Quality checks:
 
@@ -44,11 +46,26 @@ The front end is a Vite app and the `/api/extract-label` route is a Netlify Func
 
 If the serverless function is not deployed or `OPENAI_API_KEY` is not configured, image extraction fails explicitly and can be retried after configuration is fixed. The app does not silently fall back to OCR.
 
+## Batch Input Shape
+
+Single-label review uses the form on the left because it mirrors the current workflow: an agent has one application open and checks one label against it.
+
+Batch review supports a CSV application import plus image uploads. The CSV is keyed by image filename:
+
+```csv
+fileName,brandName,classType,alcoholContent,netContents,bottlerName,bottlerAddress,countryOfOrigin,beverageType
+old-tom.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,Old Tom Distillery,"Louisville, KY",United States,Distilled Spirits
+```
+
+Rows without a matching CSV record use the manual application form. The results CSV includes whether the application record came from CSV or manual entry.
+
 ## Technical Approach
 
 - `netlify/functions/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs to produce schema-constrained extraction JSON.
 - `src/lib/aiExtraction.ts` downscales uploaded image labels to a 768px-wide JPEG before sending them to the server-side vision extractor, which keeps the single-label path closer to the five-second usability target.
+- `src/lib/aiExtraction.ts` retries rate-limited or transient extraction failures and honors `Retry-After`.
 - `src/lib/verification.ts` contains the deterministic review engine. The government warning wording is checked strictly; routine field matches allow limited fuzziness for casing and punctuation and explain when a normalized match was accepted.
+- Alcohol content includes an internal ABV/proof consistency check, so a label that prints `45% Alc./Vol.` and an inconsistent proof value is rejected even if the ABV alone matches the application.
 - `src/App.tsx` provides the agent-facing workflow: application record, upload queue, sample batch, status summary, explanations, extracted label text, and CSV export.
 - `public/samples/` contains two generated sample labels: one compliant and one intentionally defective.
 
@@ -65,10 +82,25 @@ npm run test:labels
 npm run test:extract:openai -- --limit=1
 ```
 
+## Performance Notes
+
+Measured on July 7, 2026 with the generated Old Tom label image and the deployed Netlify prototype:
+
+| Path | Result |
+| --- | ---: |
+| Original deployed image flow before optimization | ~11.1s |
+| Optimized deployed browser upload flow | ~6.9s |
+| Optimized deployed function call with compressed image | ~5.76s |
+| Optimized local direct OpenAI call with compressed image | ~3-4s |
+
+The prototype is accurate but the deployed Netlify path is still slightly above Sarah's "about 5 seconds" target. The gap appears to be mostly serverless/function overhead plus network variability; the same compressed image/model path is under 5 seconds when called locally. A production deployment should keep the same extractor interface but run it as a warm, colocated service rather than a cold serverless function.
+
+For 200-300 label batches, the UI renders results as each item completes, shows completed/total progress, running verdict counts, ETA, and filters to `Review` or `Reject` rows. The default concurrency is capped at 5 to reduce rate-limit pressure. Production should validate the final concurrency and cost against the agency's chosen model deployment; a planning estimate for 300 optimized labels is low single-digit dollars, but the exact value depends on the contracted model endpoint and image detail setting.
+
 ## Assumptions And Tradeoffs
 
 - This prototype does not persist files, extracted label text, or review results.
-- Vision extraction is required for image labels. If a government network blocks the model endpoint, production should route to an approved internal or government cloud vision endpoint rather than silently degrading to conventional OCR.
+- Vision extraction is required for image labels. For the prototype, the cloud OpenAI call is acceptable because no documents are stored and the API key stays server-side. For production, the extractor should sit behind a single interface and swap the endpoint to Azure OpenAI in the agency's own Azure/FedRAMP tenant, keeping inference inside the approved network boundary and avoiding the firewall failure mode Marcus described.
 - Uploaded images are compressed for latency before extraction. Production should retain an optional high-detail retry path for edge cases such as very small print, severe glare, or unusually low-resolution source photos.
-- The vision extractor returns advisory fields for warning boldness, legibility, and unusually small/buried warning text. These advisories can send an otherwise passing label to `Review`, but final type-size and boldness calls should still be confirmed visually in production.
+- The warning wording check is deterministic and can reject labels. Warning boldness, legibility, and unusually small/buried warning text are advisory vision-model judgments: concerns send an otherwise passing label to `Review`; clean or unknown visual-format results do not legally clear typography on their own.
 - PDF and COLA integration are out of scope for this prototype.

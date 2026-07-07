@@ -23,6 +23,22 @@ type ExtractionProgress = {
 
 const EXTRACTION_IMAGE_WIDTH = 768
 const EXTRACTION_JPEG_QUALITY = 0.86
+const MAX_EXTRACTION_ATTEMPTS = 3
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function retryAfterMs(response: Response, fallbackMs: number) {
+  const header = response.headers.get('Retry-After')
+  if (!header) return fallbackMs
+
+  const seconds = Number(header)
+  if (Number.isFinite(seconds)) return seconds * 1000
+
+  const dateMs = Date.parse(header)
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : fallbackMs
+}
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -75,6 +91,40 @@ function valueOrUndefined(value: string | null | undefined) {
   return trimmed ? trimmed : undefined
 }
 
+async function requestExtraction(
+  fileName: string,
+  imageDataUrl: string,
+  onProgress: (progress: ExtractionProgress) => void,
+) {
+  for (let attempt = 1; attempt <= MAX_EXTRACTION_ATTEMPTS; attempt += 1) {
+    const response = await fetch('/api/extract-label', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName,
+        imageDataUrl,
+      }),
+    })
+
+    if (response.ok) return response
+
+    const retryable = [429, 502, 503, 504].includes(response.status)
+    if (!retryable || attempt === MAX_EXTRACTION_ATTEMPTS) {
+      const message = await response.text()
+      throw new Error(message || `AI extraction failed with ${response.status}`)
+    }
+
+    const waitMs = retryAfterMs(response, 800 * 2 ** (attempt - 1))
+    onProgress({
+      status: `Waiting to retry extraction (${attempt + 1}/${MAX_EXTRACTION_ATTEMPTS})`,
+      progress: Math.min(0.34 + attempt * 0.08, 0.58),
+    })
+    await sleep(waitMs)
+  }
+
+  throw new Error('AI extraction failed after retries')
+}
+
 export async function extractWithOpenAI(
   file: File,
   onProgress: (progress: ExtractionProgress) => void,
@@ -87,20 +137,7 @@ export async function extractWithOpenAI(
   const imageDataUrl = await fileToDataUrl(file)
 
   onProgress({ status: 'Reading with vision model', progress: 0.34 })
-  const response = await fetch('/api/extract-label', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      fileName: file.name,
-      imageDataUrl,
-    }),
-  })
-
-  if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || `AI extraction failed with ${response.status}`)
-  }
-
+  const response = await requestExtraction(file.name, imageDataUrl, onProgress)
   const payload = (await response.json()) as AiExtractionPayload
   const rawText = payload.rawText || ''
   const confidence =

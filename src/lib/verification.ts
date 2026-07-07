@@ -164,6 +164,16 @@ function parseAbv(value: string) {
   return null
 }
 
+function parseAlcoholParts(value: string) {
+  const percent = value.match(/(\d{1,2}(?:\.\d+)?)\s*%/)
+  const proof = value.match(/(\d{2,3}(?:\.\d+)?)\s*PROOF/i)
+
+  return {
+    abv: percent ? Number.parseFloat(percent[1]) : null,
+    proof: proof ? Number.parseFloat(proof[1]) : null,
+  }
+}
+
 function parseVolumeMl(value: string) {
   const match = value.match(
     /(\d+(?:\.\d+)?)\s*(ML|MILLILITERS?|L|LITERS?|FL\.?\s*OZ\.?|OZ)\b/i,
@@ -176,6 +186,48 @@ function parseVolumeMl(value: string) {
   if (unit.startsWith('L') && !unit.startsWith('ML')) return amount * 1000
   if (unit.includes('OZ')) return amount * 29.5735
   return amount
+}
+
+function compareProofConsistency(found: string | undefined, rawText: string): VerificationCheck {
+  const candidate = found && /\bPROOF\b/i.test(found) ? found : rawText
+  const alcohol = parseAlcoholParts(candidate)
+
+  if (alcohol.abv === null || alcohol.proof === null) {
+    return {
+      id: 'proofConsistency',
+      label: 'ABV/proof consistency',
+      expected: 'If both are present, proof equals twice the ABV',
+      found: found || 'Only one value found',
+      status: 'pass',
+      score: 1,
+      message: 'No conflicting proof and ABV values were found.',
+    }
+  }
+
+  const expectedProof = alcohol.abv * 2
+  const delta = Math.abs(expectedProof - alcohol.proof)
+
+  if (delta <= 0.2) {
+    return {
+      id: 'proofConsistency',
+      label: 'ABV/proof consistency',
+      expected: `${alcohol.abv}% ABV equals ${expectedProof.toFixed(1)} proof`,
+      found: `${alcohol.abv}% ABV and ${alcohol.proof} proof`,
+      status: 'pass',
+      score: 1,
+      message: 'Printed ABV and proof values are internally consistent.',
+    }
+  }
+
+  return {
+    id: 'proofConsistency',
+    label: 'ABV/proof consistency',
+    expected: `${alcohol.abv}% ABV should be about ${expectedProof.toFixed(1)} proof`,
+    found: `${alcohol.abv}% ABV and ${alcohol.proof} proof`,
+    status: 'fail',
+    score: 0,
+    message: 'Printed proof does not match the printed alcohol percentage.',
+  }
 }
 
 function statusFromChecks(checks: VerificationCheck[]): ReviewStatus {
@@ -461,6 +513,24 @@ function compareWarningFormatting(extracted: ExtractedFields): VerificationCheck
     })
   }
 
+  if (!checks.length) {
+    checks.push({
+      id: 'warningVisualFormat',
+      label: 'Warning visual format',
+      expected: 'No boldness, legibility, or tiny-text concern flagged',
+      found:
+        extracted.warningPrefixBold === true &&
+        extracted.warningLegible === true &&
+        extracted.warningRelativeSize === 'acceptable'
+          ? 'Vision check found no formatting issue'
+          : 'Visual format not deterministically verified',
+      status: 'pass',
+      score: 1,
+      message:
+        'Typography is treated as advisory; agents should confirm visually when needed.',
+    })
+  }
+
   return checks
 }
 
@@ -555,6 +625,7 @@ export function verifyLabel(
       0.82,
     ),
     compareAlcohol(application.alcoholContent, extracted.alcoholContent),
+    compareProofConsistency(extracted.alcoholContent, extracted.rawText),
     compareNetContents(application.netContents, extracted.netContents),
     compareTextField(
       'bottler',
