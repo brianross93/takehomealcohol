@@ -4,9 +4,10 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 
 ## What It Does
 
-- Accepts multiple label files in one batch.
+- Accepts multiple uploaded files in one batch.
 - Uses OpenAI vision extraction for image labels because conventional OCR is unreliable on stylized label artwork.
-- Imports optional CSV application records keyed by label filename for larger batches.
+- Extracts PNG, JPG, and WEBP label images; CSV uploads are treated as application-record imports.
+- PDF and HEIC/HEIF uploads surface explicit unsupported-format errors in this prototype instead of flowing into verification.
 - Processes queued uploads with a small concurrency pool, retry/backoff for transient API limits, and per-item results as soon as each label finishes.
 - Filters completed rows to `Ready`, `Review`, or `Reject` so agents can focus on exceptions in large batches.
 - Supports manual pasted label text for quick reviewer testing.
@@ -50,14 +51,14 @@ If the serverless function is not deployed or `OPENAI_API_KEY` is not configured
 
 Single-label review uses the form on the left because it mirrors the current workflow: an agent has one application open and checks one label against it.
 
-Batch review supports a CSV application import plus image uploads. The CSV is keyed by image filename:
+Batch review supports a CSV application import plus image uploads. CSV files can be uploaded through the main batch picker/dropzone or the dedicated `Import CSV` control. The CSV is keyed by image filename:
 
 ```csv
 fileName,brandName,classType,alcoholContent,netContents,bottlerName,bottlerAddress,countryOfOrigin,beverageType
 old-tom.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,Old Tom Distillery,"Louisville, KY",United States,Distilled Spirits
 ```
 
-Rows without a matching CSV record use the manual application form. The results CSV includes whether the application record came from CSV or manual entry.
+Rows without a matching CSV record use the manual application form. The results CSV includes whether the application record came from CSV or manual entry. PNG, JPG, and WEBP labels are extractable in the prototype; PDF and HEIC/HEIF files are accepted by the uploader but produce an explicit unsupported-format queue error so agents know to convert them rather than receiving misleading compliance failures.
 
 ## Technical Approach
 
@@ -102,5 +103,6 @@ For 200-300 label batches, the UI renders results as each item completes, shows 
 - This prototype does not persist files, extracted label text, or review results.
 - Vision extraction is required for image labels. For the prototype, the cloud OpenAI call is acceptable because no documents are stored and the API key stays server-side. For production, the extractor should sit behind a single interface and swap the endpoint to Azure OpenAI in the agency's own Azure/FedRAMP tenant, keeping inference inside the approved network boundary and avoiding the firewall failure mode Marcus described.
 - Uploaded images are compressed for latency before extraction. Production should retain an optional high-detail retry path for edge cases such as very small print, severe glare, or unusually low-resolution source photos.
+- PDF page rendering and HEIC/HEIF normalization are out of scope for the prototype. Production should add a preprocessing stage that splits PDF batches into page images and normalizes iPhone HEIC uploads to JPEG before calling the same extraction interface.
 - The warning wording check is deterministic and can reject labels. Warning boldness, legibility, and unusually small/buried warning text are advisory vision-model judgments: concerns send an otherwise passing label to `Review`; clean or unknown visual-format results do not legally clear typography on their own.
-- PDF and COLA integration are out of scope for this prototype.
+- COLA integration is out of scope for this prototype.

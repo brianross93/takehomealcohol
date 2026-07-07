@@ -43,12 +43,16 @@ type LabelItem = {
   previewUrl?: string
   result?: ReviewResult
   error?: string
+  canRetry?: boolean
 }
 
 const BEVERAGE_TYPES: BeverageType[] = ['Distilled Spirits', 'Wine', 'Malt Beverage']
 const BATCH_CONCURRENCY = 5
 
 type ResultFilter = 'all' | ReviewStatus
+
+const UPLOAD_ACCEPT =
+  'image/png,image/jpeg,image/webp,.csv,text/csv,application/pdf,.pdf,image/heic,image/heif,.heic,.heif'
 
 const statusCopy: Record<ReviewStatus, string> = {
   ready: 'Ready',
@@ -79,6 +83,37 @@ function normalizeFileKey(fileName: string) {
   return fileName.trim().toLowerCase()
 }
 
+function fileExtension(file: File) {
+  const dotIndex = file.name.lastIndexOf('.')
+  return dotIndex === -1 ? '' : file.name.slice(dotIndex + 1).toLowerCase()
+}
+
+function isCsvFile(file: File) {
+  return file.type === 'text/csv' || fileExtension(file) === 'csv'
+}
+
+function isPdfFile(file: File) {
+  return file.type === 'application/pdf' || fileExtension(file) === 'pdf'
+}
+
+function isHeicFile(file: File) {
+  const extension = fileExtension(file)
+  return file.type === 'image/heic' || file.type === 'image/heif' || extension === 'heic' || extension === 'heif'
+}
+
+function isSupportedImageFile(file: File) {
+  const extension = fileExtension(file)
+  return (
+    file.type === 'image/png' ||
+    file.type === 'image/jpeg' ||
+    file.type === 'image/webp' ||
+    extension === 'png' ||
+    extension === 'jpg' ||
+    extension === 'jpeg' ||
+    extension === 'webp'
+  )
+}
+
 function normalizeBeverageType(value: string | undefined): BeverageType {
   const normalized = value?.trim().toLowerCase()
   return BEVERAGE_TYPES.find((type) => type.toLowerCase() === normalized) || 'Distilled Spirits'
@@ -102,6 +137,36 @@ function makeFileItem(
     applicationSource: applicationByFileName[normalizeFileKey(file.name)] ? 'csv' : undefined,
     file,
     previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+  }
+}
+
+function unsupportedFileItem(file: File): LabelItem {
+  const message = isPdfFile(file)
+    ? 'PDF label extraction is not implemented in this prototype. Export label pages to PNG or JPG, or add production PDF page rendering before extraction.'
+    : isHeicFile(file)
+      ? 'HEIC/HEIF labels are not reliably supported in this browser extraction path. Convert iPhone uploads to JPG or PNG before review.'
+      : 'Unsupported file type. Upload PNG, JPG, WEBP label images or CSV application records.'
+
+  return {
+    id: createId(),
+    name: file.name,
+    status: 'error',
+    progress: 0,
+    progressText: 'Unsupported file type',
+    error: message,
+    canRetry: false,
+  }
+}
+
+function failedCsvItem(file: File, error: unknown): LabelItem {
+  return {
+    id: createId(),
+    name: file.name,
+    status: 'error',
+    progress: 0,
+    progressText: 'CSV import failed',
+    error: error instanceof Error ? error.message : 'Unable to import application CSV.',
+    canRetry: false,
   }
 }
 
@@ -196,19 +261,21 @@ function App() {
   }, [])
 
   const stats = useMemo(() => {
-    const completed = items.filter((item) => item.result)
-    const ready = completed.filter((item) => item.result?.status === 'ready').length
-    const review = completed.filter((item) => item.result?.status === 'review').length
-    const reject = completed.filter((item) => item.result?.status === 'reject').length
+    const reviewed = items.filter((item) => item.result)
+    const completed = items.filter((item) => item.result || item.status === 'error')
+    const ready = reviewed.filter((item) => item.result?.status === 'ready').length
+    const review = reviewed.filter((item) => item.result?.status === 'review').length
+    const reject = reviewed.filter((item) => item.result?.status === 'reject').length
     const averageMs =
-      completed.reduce((sum, item) => sum + (item.result?.durationMs || 0), 0) /
-      Math.max(completed.length, 1)
+      reviewed.reduce((sum, item) => sum + (item.result?.durationMs || 0), 0) /
+      Math.max(reviewed.length, 1)
 
     return {
       total: items.length,
       queued: items.filter((item) => item.status === 'queued').length,
       processing: items.filter((item) => item.status === 'processing').length,
       completed: completed.length,
+      reviewed: reviewed.length,
       ready,
       review,
       reject,
@@ -245,15 +312,62 @@ function App() {
     })
   }
 
-  function addFiles(fileList: FileList | File[]) {
-    const nextItems = Array.from(fileList).map((file) =>
-      makeFileItem(file, applicationByFileName),
+  async function importCsvFiles(files: File[]) {
+    const imported = await Promise.all(
+      files.map(async (file) => csvToApplications(await readTextFile(file))),
     )
-    setItems((current) => [...current, ...nextItems])
+
+    return imported.reduce<Record<string, ApplicationFields>>(
+      (merged, applications) => ({ ...merged, ...applications }),
+      {},
+    )
+  }
+
+  async function addFiles(fileList: FileList | File[]) {
+    const files = Array.from(fileList)
+    const csvFiles = files.filter(isCsvFile)
+    let importedApplications: Record<string, ApplicationFields> = {}
+    let csvErrors: LabelItem[] = []
+
+    try {
+      importedApplications = await importCsvFiles(csvFiles)
+    } catch (error) {
+      csvErrors = csvFiles.map((file) => failedCsvItem(file, error))
+    }
+
+    const nextApplications = {
+      ...applicationByFileName,
+      ...importedApplications,
+    }
+    const nextItems = files
+      .filter((file) => !isCsvFile(file))
+      .map((file) =>
+        isSupportedImageFile(file)
+          ? makeFileItem(file, nextApplications)
+          : unsupportedFileItem(file),
+      )
+      .concat(csvErrors)
+
+    if (csvFiles.length) {
+      setApplicationByFileName(nextApplications)
+    }
+
+    setItems((current) => [
+      ...current.map((item) => ({
+        ...item,
+        application:
+          importedApplications[normalizeFileKey(item.name)] ||
+          item.application,
+        applicationSource: importedApplications[normalizeFileKey(item.name)]
+          ? 'csv'
+          : item.applicationSource,
+      })),
+      ...nextItems,
+    ])
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    if (event.target.files?.length) addFiles(event.target.files)
+    if (event.target.files?.length) void addFiles(event.target.files)
     event.target.value = ''
   }
 
@@ -284,7 +398,7 @@ function App() {
 
   function handleDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault()
-    if (event.dataTransfer.files.length) addFiles(event.dataTransfer.files)
+    if (event.dataTransfer.files.length) void addFiles(event.dataTransfer.files)
   }
 
   function loadSamples() {
@@ -583,7 +697,7 @@ function App() {
                 type="button"
                 className="secondary-button icon-only"
                 onClick={recheckCompletedLabels}
-                disabled={stats.completed === 0 || isProcessing}
+                disabled={stats.reviewed === 0 || isProcessing}
                 title="Recheck completed labels"
               >
                 <RefreshCw size={18} />
@@ -592,7 +706,7 @@ function App() {
                 type="button"
                 className="secondary-button icon-only"
                 onClick={downloadCsv}
-                disabled={stats.completed === 0}
+                disabled={stats.reviewed === 0}
                 title="Download CSV"
               >
                 <Download size={18} />
@@ -617,11 +731,11 @@ function App() {
             >
               <Upload size={24} aria-hidden="true" />
               <strong>Upload labels</strong>
-              <span>PNG, JPG, or WEBP</span>
+              <span>PNG, JPG, WEBP, CSV, PDF, or HEIC</span>
               <input
                 type="file"
                 multiple
-                accept="image/png,image/jpeg,image/webp"
+                accept={UPLOAD_ACCEPT}
                 onChange={handleFileChange}
               />
             </label>
@@ -753,7 +867,7 @@ function ResultItem({
 
         <div className="result-actions">
           <StatusPill item={item} />
-          {item.status === 'error' ? (
+          {item.status === 'error' && item.canRetry !== false ? (
             <button
               type="button"
               className="secondary-button retry-button"
