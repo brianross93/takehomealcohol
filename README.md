@@ -6,6 +6,7 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 
 - Accepts multiple label files in one batch.
 - Uses an optional OpenAI vision extractor for image labels, with browser OCR fallback when the API route is unavailable.
+- Processes queued uploads with a small concurrency pool so large batches do not run strictly one-by-one.
 - Supports text upload for quick reviewer testing.
 - Compares extracted label text with application fields for brand, class/type, ABV, net contents, bottler/producer, country of origin, and the government warning.
 - Returns a clear `Ready`, `Review`, or `Reject` decision with field-level explanations.
@@ -29,6 +30,8 @@ npm run build
 
 ## Netlify Deployment
 
+Deployed application URL: `https://alcoholclassifier.netlify.app`
+
 The front end is a Vite app and the `/api/extract-label` route is a Netlify Function. The OpenAI API key stays server-side.
 
 - Build command: `npm run build`
@@ -45,7 +48,7 @@ If the serverless function is not deployed or `OPENAI_API_KEY` is not configured
 - `netlify/functions/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs to produce schema-constrained extraction JSON.
 - `src/lib/aiExtraction.ts` tries the server-side vision extractor first, then falls back cleanly.
 - `src/lib/ocr.ts` wraps Tesseract.js so fallback OCR runs in the browser without sending label images to a third-party service.
-- `src/lib/verification.ts` contains the deterministic review engine. The government warning is checked strictly; routine field matches allow limited fuzziness for casing and punctuation.
+- `src/lib/verification.ts` contains the deterministic review engine. The government warning wording is checked strictly; routine field matches allow limited fuzziness for casing and punctuation and explain when a normalized match was accepted.
 - `src/App.tsx` provides the agent-facing workflow: application record, upload queue, sample batch, status summary, explanations, raw OCR text, and CSV export.
 - `public/samples/` contains two generated sample labels: one compliant and one intentionally defective.
 
@@ -66,5 +69,5 @@ npm run test:extract:openai -- --limit=1
 
 - This prototype does not persist files, OCR text, or review results.
 - Vision extraction is preferred for stylized fonts, curved labels, glare, and non-standard layouts. OCR remains as a resilience path for network-blocked environments.
-- OCR text cannot reliably prove visual formatting such as bold weight or minimum type size. The prototype checks exact warning wording and uppercase prefix, then documents visual-format verification as a production extension.
+- The vision extractor returns advisory fields for warning boldness, legibility, and unusually small/buried warning text. These advisories can send an otherwise passing label to `Review`, but final type-size and boldness calls should still be confirmed visually in production.
 - PDF and COLA integration are out of scope for this prototype.

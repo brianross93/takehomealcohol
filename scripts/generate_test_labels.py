@@ -114,10 +114,21 @@ def draw_label(case: dict) -> Image.Image:
     warning = case["label"].get("warningText")
     if warning:
         warning_font = font(case.get("warningSize", 18))
+        warning_bold_font = font(case.get("warningSize", 18), bold=True)
         warning_fill = case.get("warningFill", ink)
         box_y = 842
         draw.rectangle((178, box_y, 722, 1026), fill="#ffffff", outline=ink, width=3)
-        wrapped_lines(draw, (204, box_y + 28), warning, warning_font, 492, warning_fill, 24)
+        if warning.startswith("GOVERNMENT WARNING:"):
+            draw.text(
+                (204, box_y + 28),
+                "GOVERNMENT WARNING:",
+                font=warning_bold_font,
+                fill=warning_fill,
+            )
+            warning_body = warning.replace("GOVERNMENT WARNING:", "", 1).strip()
+            wrapped_lines(draw, (204, box_y + 54), warning_body, warning_font, 492, warning_fill, 24)
+        else:
+            wrapped_lines(draw, (204, box_y + 28), warning, warning_font, 492, warning_fill, 24)
 
     if case.get("glare"):
         glare = Image.new("RGBA", image.size, (255, 255, 255, 0))
@@ -318,7 +329,7 @@ CASES = [
     },
     {
         "id": "11-tiny-warning",
-        "expectedStatus": "ready",
+        "expectedStatus": "review",
         "warningSize": 13,
         "label": {
             "brandName": "OLD TOM|DISTILLERY",

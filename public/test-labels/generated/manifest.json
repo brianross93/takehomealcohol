@@ -142,7 +142,7 @@
   {
     "id": "11-tiny-warning",
     "file": "/test-labels/generated/11-tiny-warning.png",
-    "expectedStatus": "ready",
+    "expectedStatus": "review",
     "application": {
       "brandName": "OLD TOM DISTILLERY",
       "classType": "Kentucky Straight Bourbon Whiskey",

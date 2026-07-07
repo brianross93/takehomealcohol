@@ -14,6 +14,10 @@ type ModelExtraction = {
   bottler: string | null
   countryOfOrigin: string | null
   warningText: string | null
+  warningPrefixBold: boolean | null
+  warningLegible: boolean | null
+  warningRelativeSize: 'acceptable' | 'small' | 'unknown'
+  warningFormatNotes: string[]
   confidence: number
   notes: string[]
 }
@@ -38,6 +42,28 @@ const extractionSchema = {
       description:
         'The government warning exactly as printed, including prefix casing. Null if not readable or absent.',
     },
+    warningPrefixBold: {
+      type: ['boolean', 'null'],
+      description:
+        'Whether the GOVERNMENT WARNING: prefix visually appears bold. Null if the warning is absent or cannot be judged.',
+    },
+    warningLegible: {
+      type: ['boolean', 'null'],
+      description:
+        'Whether the warning appears readily legible under ordinary viewing conditions. Null if absent or cannot be judged.',
+    },
+    warningRelativeSize: {
+      type: 'string',
+      enum: ['acceptable', 'small', 'unknown'],
+      description:
+        'Use small when the warning appears unusually tiny or buried relative to nearby label text.',
+    },
+    warningFormatNotes: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'Short notes about warning formatting, such as not bold, tiny text, low contrast, glare, or buried placement.',
+    },
     confidence: {
       type: 'number',
       description: 'Overall extraction confidence from 0 to 1.',
@@ -57,6 +83,10 @@ const extractionSchema = {
     'bottler',
     'countryOfOrigin',
     'warningText',
+    'warningPrefixBold',
+    'warningLegible',
+    'warningRelativeSize',
+    'warningFormatNotes',
     'confidence',
     'notes',
   ],
@@ -110,6 +140,7 @@ export default async function handler(request: Request) {
                 'Extract text and alcohol label fields from the provided label image.',
                 'Do not compare against an application record and do not infer missing values.',
                 'Preserve exact casing for warning text, especially GOVERNMENT WARNING.',
+                'Inspect whether the GOVERNMENT WARNING: prefix appears bold and whether the warning is legible or unusually small.',
                 'Return null for unreadable or absent fields.',
               ].join(' '),
             },

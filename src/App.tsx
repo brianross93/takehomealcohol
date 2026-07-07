@@ -24,6 +24,7 @@ import {
   verifyLabel,
   type ApplicationFields,
   type BeverageType,
+  type ExtractedFields,
   type ReviewResult,
   type ReviewStatus,
 } from './lib/verification'
@@ -44,6 +45,7 @@ type LabelItem = {
 }
 
 const BEVERAGE_TYPES: BeverageType[] = ['Distilled Spirits', 'Wine', 'Malt Beverage']
+const BATCH_CONCURRENCY = 4
 
 const statusCopy: Record<ReviewStatus, string> = {
   ready: 'Ready',
@@ -177,17 +179,19 @@ function App() {
 
     setIsProcessing(true)
 
-    for (const item of queue) {
+    async function processItem(item: LabelItem) {
       const startedAt = performance.now()
       updateItem(item.id, {
         status: 'processing',
         progress: 0.05,
-        progressText: item.rawText ? 'Reading text' : 'Starting OCR',
+        progressText: item.rawText ? 'Reading text' : 'Starting AI extraction',
         error: undefined,
       })
 
       try {
-        let extracted = item.rawText ? extractFields(item.rawText, 100) : undefined
+        let extracted: ExtractedFields | undefined = item.rawText
+          ? { ...extractFields(item.rawText, 100), source: 'text' as const }
+          : undefined
 
         if (!extracted) {
           try {
@@ -210,7 +214,7 @@ function App() {
               })
             })
 
-            extracted = extractFields(ocrOutput.text, ocrOutput.confidence)
+            extracted = { ...extractFields(ocrOutput.text, ocrOutput.confidence), source: 'ocr' }
           }
         }
 
@@ -232,6 +236,14 @@ function App() {
       }
     }
 
+    const workerCount = Math.min(BATCH_CONCURRENCY, queue.length)
+    const workers = Array.from({ length: workerCount }, async (_, workerIndex) => {
+      for (let index = workerIndex; index < queue.length; index += workerCount) {
+        await processItem(queue[index])
+      }
+    })
+
+    await Promise.all(workers)
     setIsProcessing(false)
   }
 
@@ -240,14 +252,9 @@ function App() {
       current.map((item) => {
         if (!item.result) return item
 
-        const extracted = extractFields(
-          item.result.extracted.rawText,
-          item.result.extracted.confidence,
-        )
-
         return {
           ...item,
-          result: verifyLabel(extracted, application, item.result.durationMs),
+          result: verifyLabel(item.result.extracted, application, item.result.durationMs),
         }
       }),
     )
@@ -566,7 +573,10 @@ function ResultItem({ item }: { item: LabelItem }) {
         <>
           <div className="result-meta">
             <span>Score {(item.result.score * 100).toFixed(0)}%</span>
-            <span>OCR {item.result.extracted.confidence.toFixed(0)}%</span>
+            <span>
+              {(item.result.extracted.source || 'ocr').toUpperCase()}{' '}
+              {item.result.extracted.confidence.toFixed(0)}%
+            </span>
             <span>{formatDuration(item.result.durationMs)}</span>
           </div>
 

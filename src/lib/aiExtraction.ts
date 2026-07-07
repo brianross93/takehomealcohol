@@ -9,6 +9,10 @@ type AiExtractionPayload = {
   bottler?: string | null
   countryOfOrigin?: string | null
   warningText?: string | null
+  warningPrefixBold?: boolean | null
+  warningLegible?: boolean | null
+  warningRelativeSize?: 'acceptable' | 'small' | 'unknown' | null
+  warningFormatNotes?: string[] | null
   confidence?: number
 }
 
@@ -67,6 +71,7 @@ export async function extractWithOpenAI(
 
   return {
     ...extracted,
+    source: 'ai',
     brandName: valueOrUndefined(payload.brandName) || extracted.brandName,
     classType: valueOrUndefined(payload.classType) || extracted.classType,
     alcoholContent: valueOrUndefined(payload.alcoholContent) || extracted.alcoholContent,
@@ -74,5 +79,15 @@ export async function extractWithOpenAI(
     bottler: valueOrUndefined(payload.bottler) || extracted.bottler,
     countryOfOrigin: valueOrUndefined(payload.countryOfOrigin) || extracted.countryOfOrigin,
     warningText: valueOrUndefined(payload.warningText) || extracted.warningText,
+    warningPrefixBold:
+      typeof payload.warningPrefixBold === 'boolean'
+        ? payload.warningPrefixBold
+        : extracted.warningPrefixBold,
+    warningLegible:
+      typeof payload.warningLegible === 'boolean'
+        ? payload.warningLegible
+        : extracted.warningLegible,
+    warningRelativeSize: payload.warningRelativeSize || extracted.warningRelativeSize,
+    warningFormatNotes: payload.warningFormatNotes || extracted.warningFormatNotes,
   }
 }

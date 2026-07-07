@@ -29,6 +29,7 @@ type TesseractRuntime = {
 
 let activeProgressHandler: ((progress: OcrProgress) => void) | undefined
 let workerPromise: Promise<TesseractWorker> | undefined
+let ocrQueue: Promise<unknown> = Promise.resolve()
 
 async function getWorker() {
   if (!workerPromise) {
@@ -72,18 +73,24 @@ export async function recognizeLabelFile(
     return readTextFile(file)
   }
 
-  activeProgressHandler = onProgress
-  const worker = await getWorker()
-  try {
-    const result = await worker.recognize(file)
+  const recognize = async () => {
+    activeProgressHandler = onProgress
+    const worker = await getWorker()
+    try {
+      const result = await worker.recognize(file)
 
-    return {
-      text: result.data.text,
-      confidence: result.data.confidence,
+      return {
+        text: result.data.text,
+        confidence: result.data.confidence,
+      }
+    } finally {
+      activeProgressHandler = undefined
     }
-  } finally {
-    activeProgressHandler = undefined
   }
+
+  const queuedResult = ocrQueue.then(recognize, recognize)
+  ocrQueue = queuedResult.catch(() => undefined)
+  return queuedResult
 }
 
 export async function shutdownOcrWorker() {

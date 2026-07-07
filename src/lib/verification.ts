@@ -19,6 +19,7 @@ export type ExtractedFields = {
   rawText: string
   lines: string[]
   confidence: number
+  source?: 'ai' | 'ocr' | 'text'
   brandName?: string
   classType?: string
   alcoholContent?: string
@@ -26,6 +27,10 @@ export type ExtractedFields = {
   bottler?: string
   countryOfOrigin?: string
   warningText?: string
+  warningPrefixBold?: boolean
+  warningLegible?: boolean
+  warningRelativeSize?: 'acceptable' | 'small' | 'unknown'
+  warningFormatNotes?: string[]
 }
 
 export type VerificationCheck = {
@@ -215,6 +220,8 @@ function compareTextField(
   const candidate = found || bestLineMatch(lines, expected).line
 
   if (candidate && compactContains(candidate, expected)) {
+    const normalizedMatch = normalizeExact(candidate) !== normalizeExact(expected)
+
     return {
       id,
       label,
@@ -222,7 +229,9 @@ function compareTextField(
       found: candidate,
       status: 'pass',
       score: 1,
-      message: 'Label text matches the application field.',
+      message: normalizedMatch
+        ? 'Normalized match; casing or punctuation differs but appears equivalent.'
+        : 'Label text matches the application field.',
     }
   }
 
@@ -358,13 +367,14 @@ function compareWarning(rawText: string, warningText: string | undefined): Verif
   const exactWarning = normalizeExact(STANDARD_WARNING)
   const exactRaw = normalizeExact(rawText)
   const found = warningText || 'Not found'
+  const exactFound = normalizeExact(found)
 
-  if (exactRaw.includes(exactWarning)) {
+  if (exactFound.includes(exactWarning) || exactRaw.includes(exactWarning)) {
     return {
       id: 'governmentWarning',
       label: 'Government warning',
       expected: STANDARD_WARNING,
-      found: STANDARD_WARNING,
+      found: found === 'Not found' ? STANDARD_WARNING : found,
       status: 'pass',
       score: 1,
       message: 'Required warning text is present exactly.',
@@ -387,6 +397,18 @@ function compareWarning(rawText: string, warningText: string | undefined): Verif
     }
   }
 
+  if (exactFound.toUpperCase() === exactWarning.toUpperCase()) {
+    return {
+      id: 'governmentWarning',
+      label: 'Government warning',
+      expected: STANDARD_WARNING,
+      found,
+      status: 'fail',
+      score: 0.72,
+      message: 'Warning wording matches, but casing differs from the required statement.',
+    }
+  }
+
   return {
     id: 'governmentWarning',
     label: 'Government warning',
@@ -396,6 +418,50 @@ function compareWarning(rawText: string, warningText: string | undefined): Verif
     score: textSimilarity(found, STANDARD_WARNING),
     message: 'Warning text is present but not word-for-word exact.',
   }
+}
+
+function compareWarningFormatting(extracted: ExtractedFields): VerificationCheck[] {
+  if (!extracted.warningText) return []
+
+  const checks: VerificationCheck[] = []
+
+  if (extracted.warningPrefixBold === false) {
+    checks.push({
+      id: 'warningBold',
+      label: 'Warning bold prefix',
+      expected: 'GOVERNMENT WARNING: appears bold',
+      found: 'Prefix does not appear bold',
+      status: 'warn',
+      score: 0.65,
+      message: 'Advisory: the warning prefix should be bold; confirm visually.',
+    })
+  }
+
+  if (extracted.warningLegible === false) {
+    checks.push({
+      id: 'warningLegibility',
+      label: 'Warning legibility',
+      expected: 'Warning is readily legible',
+      found: 'Warning appears hard to read',
+      status: 'warn',
+      score: 0.55,
+      message: 'Advisory: warning may be too small, low contrast, obscured, or buried.',
+    })
+  }
+
+  if (extracted.warningRelativeSize === 'small') {
+    checks.push({
+      id: 'warningSize',
+      label: 'Warning size',
+      expected: 'Warning appears appropriately sized for review',
+      found: 'Warning appears small relative to surrounding label text',
+      status: 'warn',
+      score: 0.65,
+      message: 'Advisory: warning text may need a type-size review.',
+    })
+  }
+
+  return checks
 }
 
 export function extractFields(rawText: string, confidence = 0): ExtractedFields {
@@ -509,6 +575,7 @@ export function verifyLabel(
       0.86,
     ),
     compareWarning(extracted.rawText, extracted.warningText),
+    ...compareWarningFormatting(extracted),
   ]
 
   const score = boundedScore(
