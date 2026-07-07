@@ -60,7 +60,7 @@ Or create `.env.local` in the project root:
 
 ```bash
 OPENAI_API_KEY=...
-OPENAI_EXTRACTION_MODEL=gpt-5.5
+OPENAI_EXTRACTION_MODEL=gpt-5.4-mini
 ```
 
 Then run one label:

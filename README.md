@@ -1,60 +1,118 @@
 # Alcohol Label Verification
 
-Standalone prototype for reviewing alcohol beverage label artwork against application data. The app is designed around the take-home stakeholder notes: simple controls, batch review, fast feedback, no document storage, and reliable vision extraction for stylized label artwork.
+Standalone prototype for reviewing alcohol beverage label artwork against submitted application data.
 
-## What It Does
+**Live app:** [https://alcoholclassifier.netlify.app](https://alcoholclassifier.netlify.app)
 
-- Accepts multiple uploaded files in one batch for custom testing.
-- Uses OpenAI vision extraction for image labels because conventional OCR is unreliable on stylized label artwork; there is no OCR fallback in this prototype.
-- Extracts PNG, JPG, and WEBP label images; CSV uploads are treated as application-record imports.
-- PDF and HEIC/HEIF uploads surface explicit unsupported-format errors in this prototype instead of flowing into verification.
-- Processes queued uploads with a small concurrency pool, retry/backoff for transient API limits, and per-item results as soon as each label finishes.
-- Filters completed rows to `Ready`, `Review`, or `Missing` so agents can focus on exceptions in large batches.
-- Loads a provided review packet by default: application-form rows plus attached label images, routed through the same CSV/image import path as user uploads.
-- Keeps the custom upload panel empty by default so reviewers can test their own CSV/image packets without clearing the provided demo queue.
-- Prefetches the current form plus the next two labels, so the reviewer can inspect the form and artwork while AI analysis completes in the background.
-- Lets the human reviewer record an `Accept` or `Reject` decision, keeps that separate from the AI recommendation, and automatically advances to the next form.
-- Supports `A`/Right Arrow for accept and `R`/Left Arrow for reject in the one-by-one review queue.
-- Supports manual pasted label text for quick reviewer testing.
-- Includes a `Samples` button that preloads review fixtures without needing local files.
-- Compares extracted label text with application fields for brand, class/type, ABV, net contents, bottler/producer, country of origin, and the government warning.
-- Returns a clear `Ready`, `Review`, or `Missing` triage status with field-level explanations. The classifier does not make the final regulatory decision; it calls attention to what the human agent should review.
-- Includes sample labels and CSV export with `aiRecommendation`, `agentDecision`, and `agentDecisionAt` fields for reviewer handoff.
+The app is built around the core reviewer scenario: an agent opens an application, looks at the submitted label artwork, and checks whether the label matches the application fields. The prototype uses vision extraction for label images, deterministic comparison logic for field checks, and a human-in-the-loop final decision.
 
-## Reviewer Walkthrough
+## Quick Demo
 
-Open `https://alcoholclassifier.netlify.app`. The app starts with a provided review packet already loaded, so the reviewer does not need to find files before trying the workflow.
+Open the [deployed Netlify app](https://alcoholclassifier.netlify.app). No setup or API key is needed for the hosted demo.
 
-1. The top review station shows the current submitted application form and its attached label image.
-2. The app automatically starts AI analysis for the current label and prefetches the next two labels in the queue.
-3. Review the green/yellow/red field checks:
-   - green means the label appears to match the submitted form,
-   - yellow means the field is present but needs human attention,
-   - red means the required field was not found.
-4. Click `Accept` or `Reject` as the human decision, or use `A`/Right Arrow and `R`/Left Arrow. The app records that decision and moves to the next form.
+1. The top review station loads a provided packet of 8 submitted forms and matching label images.
+2. AI analysis starts automatically for the current form and prefetches the next two labels.
+3. Review the field checklist:
+   - green means the label appears to match the application,
+   - yellow means the field is present but needs agent review,
+   - red means the required field appears missing.
+4. Click `Accept` or `Reject` as the agent decision. The app records that separately from the AI recommendation and advances to the next form.
+5. Keyboard shortcuts: `A` or Right Arrow accepts; `R` or Left Arrow rejects.
 
-If the reviewer clicks faster than prefetch finishes, the next form and label still open immediately and the checklist area briefly shows an analyzing state. The agent is never blocked from seeing the submission.
+The custom upload panel below the review station starts empty. It is intentionally separate from the provided demo queue so evaluators can test their own files without clearing the demo.
 
-The provided packet is also available as `public/preloaded-submissions/application-records.csv` with matching images in `public/preloaded-submissions/`. Reviewers can click `Provided forms` to reload the top review queue. The custom upload panel below remains separate and starts empty for reviewer-supplied files.
+## Workflows
 
-The custom upload path is intentionally secondary to the assignment scenario. It is still useful for trying new labels: upload label images with a matching CSV row, or enter expected values in the manual application form. If a reviewer uploads an image without CSV/manual application data, the app drafts an application record from the extracted label fields and marks the source as `Extracted draft`; that is useful for exploring extraction quality, while CSV/manual application data remains the path for true form-vs-label comparison.
+### Provided Review Queue
+
+The provided queue represents the take-home scenario directly: a submitted application record plus attached label artwork.
+
+- The data lives in `public/preloaded-submissions/application-records.csv`.
+- Matching label images live in `public/preloaded-submissions/`.
+- The `Provided forms` button reloads that CSV and image packet into the top review station.
+- The queue prefetches just in time: when item N is open, N, N+1, and N+2 are analyzed in the background.
+- In production, the same pipeline could run as an overnight or arrival-time batch job so agents arrive to a fully pre-analyzed queue.
+
+### Custom Upload
+
+Use the lower `Custom upload` panel to test new labels.
+
+- Upload PNG, JPG, WEBP, or CSV files through the dropzone.
+- Import a CSV whose `fileName` values match image filenames for true application-vs-label comparison.
+- Or fill the application record form manually, upload an image, and click `Verify`.
+- If the manual form is blank and there is no matching CSV row, the app extracts fields from the image and marks the source as `Extracted draft`. That mode is useful for checking extraction quality, but it is not a true comparison against a submitted application.
+- PDF and HEIC/HEIF uploads show explicit unsupported-format errors in this prototype instead of producing misleading compliance failures.
+
+## What It Checks
+
+The verifier checks the required fields from the assignment context:
+
+- brand name
+- class/type
+- alcohol content
+- net contents
+- bottler/producer name and address
+- country of origin for imports
+- government warning
+
+It also checks ABV/proof consistency and treats warning typography concerns, such as non-bold prefix or tiny/buried text, as advisory review flags.
+
+The app returns one AI recommendation per label:
+
+- `Ready`: no material issue found.
+- `Review`: a field is present but differs, is ambiguous, or has advisory visual-format concerns.
+- `Missing`: a required field appears absent.
+
+The AI recommendation is not the final regulatory decision. The agent's `Accept` or `Reject` decision is stored separately in the exported CSV as `agentDecision` with `agentDecisionAt`.
+
+## CSV Input Shape
+
+Batch custom review supports a CSV application import plus image uploads. The CSV is keyed by image filename:
+
+```csv
+fileName,brandName,classType,alcoholContent,netContents,bottlerName,bottlerAddress,countryOfOrigin,beverageType
+old-tom.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,Old Tom Distillery,"Louisville, KY",United States,Distilled Spirits
+```
+
+Supported `beverageType` values:
+
+- `Distilled Spirits`
+- `Wine`
+- `Malt Beverage`
+
+Rows without a matching CSV record use the manual application form when it contains data. If both CSV and manual fields are absent, custom image uploads use the extracted-draft behavior described above.
 
 ## Running Locally
 
+Install dependencies:
+
 ```bash
 npm install
+```
+
+Run the Vite UI:
+
+```bash
 npm run dev
 ```
 
-Open the local URL printed by Vite, usually `http://127.0.0.1:5173/`. This runs the UI, sample flow, pasted-text flow, and deterministic verifier.
+Open the local URL printed by Vite, usually `http://127.0.0.1:5173/`. This is enough for the UI, provided queue loading, text fixtures, and deterministic verifier behavior.
 
-For local image extraction through the Netlify Function route:
+For local image extraction through the Netlify Function route, run:
 
 ```bash
 netlify dev
 ```
 
-That requires `OPENAI_API_KEY` in `.env.local`. The deployed app is already configured for image extraction.
+Create `.env.local` in the project root for local extraction:
+
+```bash
+OPENAI_API_KEY=...
+OPENAI_EXTRACTION_MODEL=gpt-5.4-mini
+OPENAI_IMAGE_DETAIL=low
+```
+
+The deployed Netlify app is already configured with its server-side API key. Do not commit `.env.local`.
 
 Quality checks:
 
@@ -63,54 +121,41 @@ npm run lint
 npm run build
 ```
 
-## Netlify Deployment
+## Deployment
 
-Deployed application URL: `https://alcoholclassifier.netlify.app`
+The production prototype is deployed on Netlify:
 
-The front end is a Vite app and the `/api/extract-label` route is a Netlify Function. The OpenAI API key stays server-side.
-
+- URL: [https://alcoholclassifier.netlify.app](https://alcoholclassifier.netlify.app)
 - Build command: `npm run build`
-- Output directory: `dist`
+- Publish directory: `dist`
 - Functions directory: `netlify/functions`
-- Optional environment variables:
-  - `OPENAI_API_KEY`: enables the vision extraction endpoint.
-  - `OPENAI_EXTRACTION_MODEL`: defaults to `gpt-5.4-mini`.
-  - `OPENAI_IMAGE_DETAIL`: defaults to `low`; set to `high` if a deployment needs more visual detail and can tolerate slower calls.
+- Serverless route: `/api/extract-label`
 
-If the serverless function is not deployed or `OPENAI_API_KEY` is not configured, image extraction fails explicitly and can be retried after configuration is fixed. The app does not silently fall back to OCR.
+Environment variables:
 
-## Batch Input Shape
+- `OPENAI_API_KEY`: required for image extraction.
+- `OPENAI_EXTRACTION_MODEL`: defaults to `gpt-5.4-mini`.
+- `OPENAI_IMAGE_DETAIL`: defaults to `low`; use `high` for harder labels if slower extraction is acceptable.
 
-Single-label custom review uses the form on the left because it mirrors the current workflow: an agent has one application open and checks one label against it.
-
-Batch review supports a CSV application import plus image uploads. The provided production demo packet uses that same mechanism: each row represents the submitted application form, and each matching image represents the submitted label artwork. Custom CSV files can be uploaded through the main batch picker/dropzone or the dedicated `Import CSV` control. The CSV is keyed by image filename:
-
-```csv
-fileName,brandName,classType,alcoholContent,netContents,bottlerName,bottlerAddress,countryOfOrigin,beverageType
-old-tom.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,Old Tom Distillery,"Louisville, KY",United States,Distilled Spirits
-```
-
-Rows without a matching CSV record use the manual application form when it contains data. If the manual form is blank, custom image uploads create an `Extracted draft` application from the label image and populate the form fields for inspection. The results CSV includes whether the application record came from CSV, manual entry, provided demo data, or an extracted draft. PNG, JPG, and WEBP labels are extractable in the prototype; PDF and HEIC/HEIF files are accepted by the uploader but produce an explicit unsupported-format queue error so agents know to convert them rather than receiving misleading compliance failures.
-
-The results CSV records both sides of the review: `aiRecommendation` is the classifier's `Ready`/`Review`/`Missing` triage, while `agentDecision` and `agentDecisionAt` capture the human Accept/Reject action and timestamp. In production, disagreements between those columns would be useful audit data and a natural source for regression tests or model-improvement review.
+If the function is missing or the API key is not configured, image extraction fails explicitly and the queue item shows a retryable error. The app does not silently fall back to OCR.
 
 ## Technical Approach
 
-- `netlify/functions/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs to produce schema-constrained extraction JSON.
-- `src/lib/aiExtraction.ts` downscales uploaded image labels to a 768px-wide JPEG before sending them to the server-side vision extractor, which keeps the single-label path closer to the five-second usability target.
-- `src/lib/aiExtraction.ts` retries rate-limited or transient extraction failures and honors `Retry-After`.
-- `src/lib/verification.ts` contains the deterministic review engine. Required fields use a green/yellow/red model: green means the label appears to match the application, yellow means the field is present but differs or needs human attention, and red means the required field was not found.
-- Alcohol content includes an internal ABV/proof consistency check, so a label that prints `45% Alc./Vol.` and an inconsistent proof value is flagged for agent review even if the ABV alone matches the application.
-- `src/App.tsx` provides the agent-facing workflow: application record, one-by-one provided review queue, prefetching, separate custom upload batch, extracted-draft form population, status summary, explanations, extracted label text, and CSV export.
-- `public/samples/` contains two generated sample labels: one compliant and one intentionally defective.
+- `netlify/functions/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs.
+- `src/lib/aiExtraction.ts` compresses uploaded label images before extraction, retries transient/rate-limit failures, and honors `Retry-After`.
+- `src/lib/verification.ts` contains deterministic comparison logic for the application fields, warning wording, ABV/proof consistency, and visual-format advisory flags.
+- `src/App.tsx` implements the provided review queue, prefetching, custom upload queue, extracted-draft flow, agent decisions, filters, retries, and CSV export.
+- No files, extracted text, or review decisions are persisted by the prototype.
 
-The health warning rule is based on TTB guidance for beverage alcohol labels, including the current TTB pages for [distilled spirits health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/distilled-spirits/ds-labeling-home/ds-health-warning) and [malt beverage health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/beer/labeling/malt-beverage-health-warning).
+## Testing Assets
 
-## Testing Labels
+Additional test assets and prompts are included:
 
-The repo includes 12 generated PNG labels with known expected outcomes and 12 rendered TTB sample pages for real-world layout variety. See `docs/test-plan.md`.
-
-For manual image-generation testing, use `docs/test-application-forms.csv` as the batch application records and `docs/test-image-prompts.md` for ten matching label prompts: seven expected `Ready` results and three expected `Review` results.
+- `docs/test-application-forms.csv`: application records for generated test images.
+- `docs/test-image-prompts.md`: prompts for generating matching bottle/container photos.
+- `docs/test-plan.md`: fixture coverage and extraction smoke-test notes.
+- `public/test-labels/generated/`: generated labels with expected outcomes.
+- `public/test-labels/ttb/`: rendered official TTB sample pages for extraction/layout variety.
 
 Useful commands:
 
@@ -121,7 +166,7 @@ npm run test:extract:openai -- --limit=1
 
 ## Performance Notes
 
-Measured on July 7, 2026 with the generated Old Tom label image and the deployed Netlify prototype:
+Measured on July 7, 2026 with generated label images and the deployed Netlify prototype:
 
 | Path | Result |
 | --- | ---: |
@@ -130,9 +175,7 @@ Measured on July 7, 2026 with the generated Old Tom label image and the deployed
 | Optimized deployed function call with compressed image | ~5.2-5.8s |
 | Optimized local direct OpenAI call with compressed image | ~3-4s |
 
-The prototype is accurate and close to Sarah's "about 5 seconds" target on the deployed path. The remaining variance appears to be mostly serverless/function overhead plus network variability; the same compressed image/model path is under 5 seconds when called locally. A production deployment should keep the same extractor interface but run it as a warm, colocated service rather than a cold serverless function.
-
-For 200-300 label batches, the UI renders results as each item completes, shows completed/total progress, running triage counts, and filters to `Review` or `Missing` rows. The default concurrency is capped at 5 to reduce rate-limit pressure. In the one-by-one review station, the demo prefetches just in time: when the reviewer opens item N, extraction for N, N+1, and N+2 starts in the background. Since an agent spends longer inspecting the form and label than extraction takes, the next verdict is usually ready before they advance. In production the same pipeline can run overnight or as soon as a batch arrives, so agents arrive to a fully pre-analyzed queue and only spend time on judgment.
+Sarah's usability concern was that nobody will use the tool if results take much longer than about 5 seconds. The single-label path is near that target, and the provided review queue makes perceived latency lower by prefetching the next labels while the agent reviews the current one.
 
 Small deployed batch validation:
 
@@ -145,15 +188,15 @@ Small deployed batch validation:
 | Triage statuses vs fixture manifest | 36/36 matched |
 | Wall-clock time | ~50.8s |
 
-Production should validate final concurrency and cost against the agency's chosen model deployment; a planning estimate for 300 optimized labels is low single-digit dollars, but the exact value depends on the contracted model endpoint and image detail setting.
+Production should validate final concurrency and cost against the agency's chosen model endpoint. The prototype caps batch concurrency at 5 to reduce rate-limit pressure.
 
 ## Assumptions And Tradeoffs
 
-- This prototype does not persist files, extracted label text, or review results.
-- Vision extraction is required for image labels. The app does not use OCR because OCR performed poorly on stylized fonts, curved labels, glare, and non-standard layouts. If extraction fails, the queue item shows an explicit error and retry path instead of silently falling back to a weaker OCR result.
-- For the prototype, the cloud OpenAI call is acceptable because no documents are stored and the API key stays server-side. For production, the extractor should sit behind a single interface and swap the endpoint to Azure OpenAI in the agency's own Azure/FedRAMP tenant, keeping inference inside the approved network boundary and avoiding the firewall failure mode Marcus described.
-- Uploaded images are compressed for latency before extraction. Production should retain an optional high-detail retry path for edge cases such as very small print, severe glare, or unusually low-resolution source photos.
-- PDF page rendering and HEIC/HEIF normalization are out of scope for the prototype. Production should add a preprocessing stage that splits PDF batches into page images and normalizes iPhone HEIC uploads to JPEG before calling the same extraction interface.
-- The warning wording check is deterministic but still routes to human review instead of making a final agency decision. Warning boldness, legibility, and unusually small/buried warning text are advisory vision-model judgments: concerns send an otherwise passing label to `Review`; clean or unknown visual-format results do not legally clear typography on their own.
-- A production version could capture agent decisions and use them to tune thresholds, prompts, regression tests, and reviewer-specific guidance over time. That learning loop is intentionally out of scope for this prototype.
+- Vision extraction is required for image labels. OCR was removed because it performed poorly on stylized fonts, curved labels, glare, and non-standard layouts.
+- A cloud OpenAI call is acceptable for this prototype because files are not persisted and the API key stays server-side.
+- For production, the extractor should sit behind a single interface and swap to Azure OpenAI in the agency's own Azure/FedRAMP tenant, keeping inference inside the approved network boundary.
+- Uploaded images are compressed for latency. Production should retain an optional high-detail retry path for very small print, glare, or unusually low-resolution photos.
+- PDF page rendering and HEIC/HEIF normalization are out of scope for the prototype. Production should add preprocessing that converts those inputs to images before extraction.
+- Warning wording is checked deterministically. Warning boldness, legibility, and tiny/buried text are advisory vision-model judgments that can escalate a label to `Review`, but they do not legally clear typography on their own.
+- A production system could use agent decisions and AI/agent disagreements as audit data and model-improvement input. That learning loop is out of scope for this prototype.
 - COLA integration is out of scope for this prototype.
