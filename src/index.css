@@ -1,0 +1,57 @@
+:root {
+  --page: #f5f7fa;
+  --surface: #ffffff;
+  --surface-muted: #eef2f6;
+  --text: #202124;
+  --muted: #667085;
+  --border: #d9dee7;
+  --border-strong: #b8c1cf;
+  --accent: #116b67;
+  --accent-hover: #0c5754;
+  --accent-soft: #e2f2ef;
+  --ready: #146c43;
+  --ready-soft: #e5f3eb;
+  --review: #9a6700;
+  --review-soft: #fff2cf;
+  --reject: #a43c30;
+  --reject-soft: #fae8e5;
+  --focus: rgba(47, 95, 159, 0.25);
+  --shadow: 0 12px 26px rgba(34, 48, 73, 0.08);
+  --sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  color: var(--text);
+  background: var(--page);
+  font: 16px/1.45 var(--sans);
+  letter-spacing: 0;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: var(--page);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+label,
+summary,
+select {
+  -webkit-tap-highlight-color: transparent;
+}

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200" role="img" aria-label="Old Tom review sample label">
+  <rect width="900" height="1200" fill="#f7f8fb"/>
+  <rect x="108" y="78" width="684" height="1044" rx="8" fill="#ffffff" stroke="#202124" stroke-width="10"/>
+  <rect x="148" y="118" width="604" height="964" rx="4" fill="#fffdf7" stroke="#b48b78" stroke-width="4"/>
+  <text x="450" y="210" text-anchor="middle" font-family="Georgia, serif" font-size="48" font-weight="700" fill="#202124">Old Tom</text>
+  <text x="450" y="270" text-anchor="middle" font-family="Georgia, serif" font-size="38" font-weight="700" fill="#202124">Distiller's Reserve</text>
+  <line x1="208" y1="326" x2="692" y2="326" stroke="#b48b78" stroke-width="4"/>
+  <text x="450" y="404" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#333333">Kentucky Bourbon Whiskey</text>
+  <text x="450" y="548" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" font-weight="700" fill="#202124">43% Alc./Vol. (86 Proof)</text>
+  <text x="450" y="626" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#202124">750 mL</text>
+  <text x="450" y="720" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" fill="#202124">Bottled by: Old Tom Distillery, Louisville, KY</text>
+  <text x="450" y="768" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" fill="#202124">Product of United States</text>
+  <rect x="184" y="842" width="532" height="174" fill="#ffffff" stroke="#202124" stroke-width="3"/>
+  <text x="206" y="882" font-family="Arial, sans-serif" font-size="22" font-weight="400" fill="#202124">Government Warning:</text>
+  <text x="206" y="914" font-family="Arial, sans-serif" font-size="18" fill="#202124">(1) According to the Surgeon General, women should not drink</text>
+  <text x="206" y="940" font-family="Arial, sans-serif" font-size="18" fill="#202124">alcoholic beverages during pregnancy because of risk of birth</text>
+  <text x="206" y="966" font-family="Arial, sans-serif" font-size="18" fill="#202124">defects. (2) Consumption of alcoholic beverages may impair your</text>
+  <text x="206" y="992" font-family="Arial, sans-serif" font-size="18" fill="#202124">ability to drive or operate machinery, and may cause health problems.</text>
+</svg>
