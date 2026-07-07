@@ -2,7 +2,7 @@
 
 Standalone prototype for reviewing alcohol beverage label artwork against submitted application data.
 
-**Live app:** [https://alcoholclassifier.netlify.app](https://alcoholclassifier.netlify.app)
+**[Open the deployed Netlify app](https://alcoholclassifier.netlify.app)**
 
 The app is built around the core reviewer scenario: an agent opens an application, looks at the submitted label artwork, and checks whether the label matches the application fields. The prototype uses vision extraction for label images, deterministic comparison logic for field checks, and a human-in-the-loop final decision.
 
