@@ -5,7 +5,7 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 ## What It Does
 
 - Accepts multiple uploaded files in one batch.
-- Uses OpenAI vision extraction for image labels because conventional OCR is unreliable on stylized label artwork.
+- Uses OpenAI vision extraction for image labels because conventional OCR is unreliable on stylized label artwork; there is no OCR fallback in this prototype.
 - Extracts PNG, JPG, and WEBP label images; CSV uploads are treated as application-record imports.
 - PDF and HEIC/HEIF uploads surface explicit unsupported-format errors in this prototype instead of flowing into verification.
 - Processes queued uploads with a small concurrency pool, retry/backoff for transient API limits, and per-item results as soon as each label finishes.
@@ -117,7 +117,7 @@ Small deployed batch validation:
 | Synthetic `429 Retry-After` responses injected before real retries | 5 |
 | Real extraction POSTs after retry | 36 |
 | Final queue state | 36/36 done, 0 stuck, 0 extraction errors |
-| Verdicts vs fixture manifest | 36/36 matched |
+| Triage statuses vs fixture manifest | 36/36 matched |
 | Wall-clock time | ~50.8s |
 
 Production should validate final concurrency and cost against the agency's chosen model deployment; a planning estimate for 300 optimized labels is low single-digit dollars, but the exact value depends on the contracted model endpoint and image detail setting.
@@ -125,7 +125,8 @@ Production should validate final concurrency and cost against the agency's chose
 ## Assumptions And Tradeoffs
 
 - This prototype does not persist files, extracted label text, or review results.
-- Vision extraction is required for image labels. For the prototype, the cloud OpenAI call is acceptable because no documents are stored and the API key stays server-side. For production, the extractor should sit behind a single interface and swap the endpoint to Azure OpenAI in the agency's own Azure/FedRAMP tenant, keeping inference inside the approved network boundary and avoiding the firewall failure mode Marcus described.
+- Vision extraction is required for image labels. The app does not use OCR because OCR performed poorly on stylized fonts, curved labels, glare, and non-standard layouts. If extraction fails, the queue item shows an explicit error and retry path instead of silently falling back to a weaker OCR result.
+- For the prototype, the cloud OpenAI call is acceptable because no documents are stored and the API key stays server-side. For production, the extractor should sit behind a single interface and swap the endpoint to Azure OpenAI in the agency's own Azure/FedRAMP tenant, keeping inference inside the approved network boundary and avoiding the firewall failure mode Marcus described.
 - Uploaded images are compressed for latency before extraction. Production should retain an optional high-detail retry path for edge cases such as very small print, severe glare, or unusually low-resolution source photos.
 - PDF page rendering and HEIC/HEIF normalization are out of scope for the prototype. Production should add a preprocessing stage that splits PDF batches into page images and normalizes iPhone HEIC uploads to JPEG before calling the same extraction interface.
 - The warning wording check is deterministic but still routes to human review instead of making a final agency decision. Warning boldness, legibility, and unusually small/buried warning text are advisory vision-model judgments: concerns send an otherwise passing label to `Review`; clean or unknown visual-format results do not legally clear typography on their own.
