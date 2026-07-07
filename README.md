@@ -89,11 +89,11 @@ Measured on July 7, 2026 with the generated Old Tom label image and the deployed
 | Path | Result |
 | --- | ---: |
 | Original deployed image flow before optimization | ~11.1s |
-| Optimized deployed browser upload flow | ~6.9s |
-| Optimized deployed function call with compressed image | ~5.76s |
+| Optimized deployed browser upload flow after warmup | ~5.3s |
+| Optimized deployed function call with compressed image | ~5.2-5.8s |
 | Optimized local direct OpenAI call with compressed image | ~3-4s |
 
-The prototype is accurate but the deployed Netlify path is still slightly above Sarah's "about 5 seconds" target. The gap appears to be mostly serverless/function overhead plus network variability; the same compressed image/model path is under 5 seconds when called locally. A production deployment should keep the same extractor interface but run it as a warm, colocated service rather than a cold serverless function.
+The prototype is accurate and close to Sarah's "about 5 seconds" target on the deployed path. The remaining variance appears to be mostly serverless/function overhead plus network variability; the same compressed image/model path is under 5 seconds when called locally. A production deployment should keep the same extractor interface but run it as a warm, colocated service rather than a cold serverless function.
 
 For 200-300 label batches, the UI renders results as each item completes, shows completed/total progress, running verdict counts, ETA, and filters to `Review` or `Reject` rows. The default concurrency is capped at 5 to reduce rate-limit pressure. Production should validate the final concurrency and cost against the agency's chosen model deployment; a planning estimate for 300 optimized labels is low single-digit dollars, but the exact value depends on the contracted model endpoint and image detail setting.
 
