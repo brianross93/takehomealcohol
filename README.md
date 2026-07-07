@@ -85,6 +85,8 @@ The health warning rule is based on TTB guidance for beverage alcohol labels, in
 
 The repo includes 12 generated PNG labels with known expected outcomes and 12 rendered TTB sample pages for real-world layout variety. See `docs/test-plan.md`.
 
+For manual image-generation testing, use `docs/test-application-forms.csv` as the batch application records and `docs/test-image-prompts.md` for ten matching label prompts: seven expected `Ready` results and three expected `Reject` results.
+
 Useful commands:
 
 ```bash

@@ -1,0 +1,11 @@
+fileName,brandName,classType,alcoholContent,netContents,bottlerName,bottlerAddress,countryOfOrigin,beverageType
+01-old-tom-compliant.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,Old Tom Distillery,"Louisville, KY",United States,Distilled Spirits
+02-stones-throw-case.png,Stone's Throw,American Single Malt Whiskey,48% Alc./Vol. (96 Proof),750 mL,Stone's Throw Spirits,"Denver, CO",United States,Distilled Spirits
+03-sierra-norte-import.png,Sierra Norte,Tequila Blanco,40% Alc./Vol. (80 Proof),750 mL,Borderline Imports,"Austin, TX",Mexico,Distilled Spirits
+04-downriver-cabernet.png,Downriver Cellars,California Cabernet Sauvignon,13.8% Alc. by Vol.,750 mL,Downriver Cellars,"Napa, CA",United States,Wine
+05-copper-rail-rum.png,Copper Rail Rum,Caribbean Rum,42% Alc./Vol. (84 Proof),750 mL,Copper Rail Distilling,"Charleston, SC",United States,Distilled Spirits
+06-lake-moon-lager.png,Lake Moon Brewing,American Lager,5.2% Alc. by Vol.,12 FL OZ,Lake Moon Brewing Co.,"Milwaukee, WI",United States,Malt Beverage
+07-north-star-gin.png,North Star Gin,London Dry Gin,47% Alc./Vol. (94 Proof),750 mL,North Star Spirits,"Portland, ME",United States,Distilled Spirits
+08-bad-abv-old-tom.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,Old Tom Distillery,"Louisville, KY",United States,Distilled Spirits
+09-bad-net-contents-sierra.png,Sierra Norte,Tequila Blanco,40% Alc./Vol. (80 Proof),750 mL,Borderline Imports,"Austin, TX",Mexico,Distilled Spirits
+10-bad-warning-copper-rail.png,Copper Rail Rum,Caribbean Rum,42% Alc./Vol. (84 Proof),750 mL,Copper Rail Distilling,"Charleston, SC",United States,Distilled Spirits
