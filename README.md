@@ -10,11 +10,27 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 - PDF and HEIC/HEIF uploads surface explicit unsupported-format errors in this prototype instead of flowing into verification.
 - Processes queued uploads with a small concurrency pool, retry/backoff for transient API limits, and per-item results as soon as each label finishes.
 - Filters completed rows to `Ready`, `Review`, or `Missing` so agents can focus on exceptions in large batches.
+- Loads a provided review packet by default: application-form rows plus attached label images.
+- Lets the human reviewer record an `Accept` or `Reject` decision and automatically advance to the next form.
 - Supports manual pasted label text for quick reviewer testing.
 - Includes a `Samples` button that preloads review fixtures without needing local files.
 - Compares extracted label text with application fields for brand, class/type, ABV, net contents, bottler/producer, country of origin, and the government warning.
 - Returns a clear `Ready`, `Review`, or `Missing` triage status with field-level explanations. The classifier does not make the final regulatory decision; it calls attention to what the human agent should review.
 - Includes sample labels and CSV export for reviewer handoff.
+
+## Reviewer Walkthrough
+
+Open `https://alcoholclassifier.netlify.app`. The app starts with a provided review packet already loaded, so the reviewer does not need to find files before trying the workflow.
+
+1. The top review station shows the current submitted application form and its attached label image.
+2. Click `Begin review` to run the classifier for that submission.
+3. Review the green/yellow/red field checks:
+   - green means the label appears to match the submitted form,
+   - yellow means the field is present but needs human attention,
+   - red means the required field was not found.
+4. Click `Accept` or `Reject` as the human decision. The app records that decision and moves to the next form.
+
+The provided packet is also available as `public/preloaded-submissions/application-records.csv` with matching images in `public/preloaded-submissions/`. Reviewers can clear the queue and click `Provided forms` to reload it. They can also upload their own CSV and images; the CSV `fileName` column should match the image filenames.
 
 ## Running Locally
 
@@ -60,7 +76,7 @@ If the serverless function is not deployed or `OPENAI_API_KEY` is not configured
 
 Single-label review uses the form on the left because it mirrors the current workflow: an agent has one application open and checks one label against it.
 
-Batch review supports a CSV application import plus image uploads. CSV files can be uploaded through the main batch picker/dropzone or the dedicated `Import CSV` control. The CSV is keyed by image filename:
+Batch review supports a CSV application import plus image uploads. The provided production demo packet uses that same mechanism: each row represents the submitted application form, and each matching image represents the submitted label artwork. CSV files can be uploaded through the main batch picker/dropzone or the dedicated `Import CSV` control. The CSV is keyed by image filename:
 
 ```csv
 fileName,brandName,classType,alcoholContent,netContents,bottlerName,bottlerAddress,countryOfOrigin,beverageType
@@ -107,7 +123,7 @@ Measured on July 7, 2026 with the generated Old Tom label image and the deployed
 
 The prototype is accurate and close to Sarah's "about 5 seconds" target on the deployed path. The remaining variance appears to be mostly serverless/function overhead plus network variability; the same compressed image/model path is under 5 seconds when called locally. A production deployment should keep the same extractor interface but run it as a warm, colocated service rather than a cold serverless function.
 
-For 200-300 label batches, the UI renders results as each item completes, shows completed/total progress, running triage counts, ETA, and filters to `Review` or `Missing` rows. The default concurrency is capped at 5 to reduce rate-limit pressure.
+For 200-300 label batches, the UI renders results as each item completes, shows completed/total progress, running triage counts, and filters to `Review` or `Missing` rows. The default concurrency is capped at 5 to reduce rate-limit pressure. In this prototype the review station analyzes each form on demand; in production the same extraction and verification step could run ahead of time, overnight or as soon as a batch arrives, so the agent opens a precomputed queue and only spends time on judgment.
 
 Small deployed batch validation:
 
