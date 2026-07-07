@@ -15,8 +15,7 @@
     "lucide-react": "^1.23.0",
     "openai": "^6.45.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "tesseract.js": "^7.0.0"
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

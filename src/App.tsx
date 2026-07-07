@@ -12,12 +12,11 @@ import {
   Upload,
   XCircle,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import './App.css'
 import { SAMPLE_LABELS } from './data/sampleLabels'
 import { extractWithOpenAI } from './lib/aiExtraction'
-import { recognizeLabelFile, shutdownOcrWorker } from './lib/ocr'
 import {
   DEFAULT_APPLICATION,
   extractFields,
@@ -62,6 +61,11 @@ function formatDuration(ms: number) {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function extractionSourceLabel(source: ExtractedFields['source'] | undefined) {
+  if (source === 'text') return 'MANUAL'
+  return 'AI'
+}
+
 function csvEscape(value: string | number) {
   const text = String(value)
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
@@ -84,12 +88,6 @@ function App() {
   const [items, setItems] = useState<LabelItem[]>([])
   const [pastedText, setPastedText] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
-
-  useEffect(() => {
-    return () => {
-      void shutdownOcrWorker()
-    }
-  }, [])
 
   const stats = useMemo(() => {
     const completed = items.filter((item) => item.result)
@@ -122,6 +120,16 @@ function App() {
     setItems((current) =>
       current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     )
+  }
+
+  function retryItem(id: string) {
+    updateItem(id, {
+      status: 'queued',
+      progress: 0,
+      progressText: 'Queued',
+      error: undefined,
+      result: undefined,
+    })
   }
 
   function addFiles(fileList: FileList | File[]) {
@@ -194,28 +202,12 @@ function App() {
           : undefined
 
         if (!extracted) {
-          try {
-            extracted = await extractWithOpenAI(item.file as File, (progress) => {
-              updateItem(item.id, {
-                progress: Math.max(progress.progress, 0.05),
-                progressText: progress.status,
-              })
-            })
-          } catch {
+          extracted = await extractWithOpenAI(item.file as File, (progress) => {
             updateItem(item.id, {
-              progress: 0.1,
-              progressText: 'Using local OCR fallback',
+              progress: Math.max(progress.progress, 0.05),
+              progressText: progress.status,
             })
-
-            const ocrOutput = await recognizeLabelFile(item.file as File, (progress) => {
-              updateItem(item.id, {
-                progress: Math.max(progress.progress, 0.12),
-                progressText: progress.status,
-              })
-            })
-
-            extracted = { ...extractFields(ocrOutput.text, ocrOutput.confidence), source: 'ocr' }
-          }
+          })
         }
 
         const result = verifyLabel(extracted, application, performance.now() - startedAt)
@@ -230,8 +222,11 @@ function App() {
         updateItem(item.id, {
           status: 'error',
           progress: 0,
-          progressText: 'Error',
-          error: error instanceof Error ? error.message : 'Unable to process this label.',
+          progressText: 'Extraction failed',
+          error:
+            error instanceof Error
+              ? error.message
+              : 'AI extraction failed. Check the API configuration or retry.',
         })
       }
     }
@@ -321,7 +316,6 @@ function App() {
         </div>
         <div className="topbar-status" aria-label="System status">
           <span>AI extraction</span>
-          <span>OCR fallback</span>
           <span>No document storage</span>
           <span>Batch queue</span>
         </div>
@@ -467,19 +461,19 @@ function App() {
             >
               <Upload size={24} aria-hidden="true" />
               <strong>Upload labels</strong>
-              <span>PNG, JPG, SVG, or TXT</span>
+              <span>PNG, JPG, or WEBP</span>
               <input
                 type="file"
                 multiple
-                accept="image/*,.txt,text/plain"
+                accept="image/png,image/jpeg,image/webp"
                 onChange={handleFileChange}
               />
             </label>
 
             <div className="text-entry">
-              <label htmlFor="ocr-text">OCR text</label>
+              <label htmlFor="label-text">Manual label text</label>
               <textarea
-                id="ocr-text"
+                id="label-text"
                 value={pastedText}
                 onChange={(event) => setPastedText(event.target.value)}
                 placeholder="Paste label text"
@@ -498,7 +492,9 @@ function App() {
                 <p>No labels queued</p>
               </div>
             ) : (
-              items.map((item) => <ResultItem key={item.id} item={item} />)
+              items.map((item) => (
+                <ResultItem key={item.id} item={item} onRetry={retryItem} />
+              ))
             )}
           </div>
         </section>
@@ -541,7 +537,13 @@ function FieldInput({
   )
 }
 
-function ResultItem({ item }: { item: LabelItem }) {
+function ResultItem({
+  item,
+  onRetry,
+}: {
+  item: LabelItem
+  onRetry: (id: string) => void
+}) {
   const overallStatus = item.result?.status
 
   return (
@@ -559,14 +561,26 @@ function ResultItem({ item }: { item: LabelItem }) {
           <strong>{item.name}</strong>
           <span>{item.progressText}</span>
           {item.status === 'processing' ? (
-            <div className="progress-track" aria-label="OCR progress">
+            <div className="progress-track" aria-label="Extraction progress">
               <div style={{ width: `${Math.round(item.progress * 100)}%` }} />
             </div>
           ) : null}
           {item.error ? <p className="error-text">{item.error}</p> : null}
         </div>
 
-        <StatusPill item={item} />
+        <div className="result-actions">
+          <StatusPill item={item} />
+          {item.status === 'error' ? (
+            <button
+              type="button"
+              className="secondary-button retry-button"
+              onClick={() => onRetry(item.id)}
+            >
+              <RefreshCw size={16} />
+              Retry
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {item.result ? (
@@ -574,7 +588,7 @@ function ResultItem({ item }: { item: LabelItem }) {
           <div className="result-meta">
             <span>Score {(item.result.score * 100).toFixed(0)}%</span>
             <span>
-              {(item.result.extracted.source || 'ocr').toUpperCase()}{' '}
+              {extractionSourceLabel(item.result.extracted.source)}{' '}
               {item.result.extracted.confidence.toFixed(0)}%
             </span>
             <span>{formatDuration(item.result.durationMs)}</span>
@@ -605,7 +619,7 @@ function ResultItem({ item }: { item: LabelItem }) {
           </div>
 
           <details className="raw-text">
-            <summary>OCR text</summary>
+            <summary>Extracted label text</summary>
             <pre>{item.result.extracted.rawText}</pre>
           </details>
         </>

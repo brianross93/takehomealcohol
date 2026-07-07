@@ -434,6 +434,18 @@ button:disabled {
   white-space: nowrap;
 }
 
+.result-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.retry-button {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
 .status-pill--ready {
   border-color: color-mix(in srgb, var(--ready) 35%, var(--border));
   color: var(--ready);
@@ -606,6 +618,11 @@ button:disabled {
   .status-pill {
     grid-column: 1 / -1;
     justify-self: start;
+  }
+
+  .result-actions {
+    grid-column: 1 / -1;
+    justify-items: start;
   }
 
   .check-row {

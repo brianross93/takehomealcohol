@@ -8,7 +8,7 @@ Use a compact set with deliberate coverage rather than hundreds of random labels
 - 12 official TTB sample pages for layout and extraction variety.
 - 3-5 real product photos later, if time allows and licensing is clear.
 
-This is enough for a take-home prototype because it demonstrates judgment: clean passes, hard OCR/vision cases, and known compliance failures.
+This is enough for a take-home prototype because it demonstrates judgment: clean passes, hard vision-extraction cases, and known compliance failures.
 
 ## Generated Fixtures
 

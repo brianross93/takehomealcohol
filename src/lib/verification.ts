@@ -19,7 +19,7 @@ export type ExtractedFields = {
   rawText: string
   lines: string[]
   confidence: number
-  source?: 'ai' | 'ocr' | 'text'
+  source?: 'ai' | 'text'
   brandName?: string
   classType?: string
   alcoholContent?: string

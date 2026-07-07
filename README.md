@@ -5,9 +5,9 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 ## What It Does
 
 - Accepts multiple label files in one batch.
-- Uses an optional OpenAI vision extractor for image labels, with browser OCR fallback when the API route is unavailable.
+- Uses OpenAI vision extraction for image labels because conventional OCR is unreliable on stylized label artwork.
 - Processes queued uploads with a small concurrency pool so large batches do not run strictly one-by-one.
-- Supports text upload for quick reviewer testing.
+- Supports manual pasted label text for quick reviewer testing.
 - Compares extracted label text with application fields for brand, class/type, ABV, net contents, bottler/producer, country of origin, and the government warning.
 - Returns a clear `Ready`, `Review`, or `Reject` decision with field-level explanations.
 - Includes sample labels and CSV export for reviewer handoff.
@@ -41,15 +41,14 @@ The front end is a Vite app and the `/api/extract-label` route is a Netlify Func
   - `OPENAI_API_KEY`: enables the vision extraction endpoint.
   - `OPENAI_EXTRACTION_MODEL`: defaults to `gpt-5.5`.
 
-If the serverless function is not deployed or `OPENAI_API_KEY` is not configured, the app still works through local OCR fallback and pasted text.
+If the serverless function is not deployed or `OPENAI_API_KEY` is not configured, image extraction fails explicitly and can be retried after configuration is fixed. The app does not silently fall back to OCR.
 
 ## Technical Approach
 
 - `netlify/functions/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs to produce schema-constrained extraction JSON.
-- `src/lib/aiExtraction.ts` tries the server-side vision extractor first, then falls back cleanly.
-- `src/lib/ocr.ts` wraps Tesseract.js so fallback OCR runs in the browser without sending label images to a third-party service.
+- `src/lib/aiExtraction.ts` sends image labels to the server-side vision extractor and returns schema-constrained fields to the verifier.
 - `src/lib/verification.ts` contains the deterministic review engine. The government warning wording is checked strictly; routine field matches allow limited fuzziness for casing and punctuation and explain when a normalized match was accepted.
-- `src/App.tsx` provides the agent-facing workflow: application record, upload queue, sample batch, status summary, explanations, raw OCR text, and CSV export.
+- `src/App.tsx` provides the agent-facing workflow: application record, upload queue, sample batch, status summary, explanations, extracted label text, and CSV export.
 - `public/samples/` contains two generated sample labels: one compliant and one intentionally defective.
 
 The health warning rule is based on TTB guidance for beverage alcohol labels, including the current TTB pages for [distilled spirits health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/distilled-spirits/ds-labeling-home/ds-health-warning) and [malt beverage health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/beer/labeling/malt-beverage-health-warning).
@@ -67,7 +66,7 @@ npm run test:extract:openai -- --limit=1
 
 ## Assumptions And Tradeoffs
 
-- This prototype does not persist files, OCR text, or review results.
-- Vision extraction is preferred for stylized fonts, curved labels, glare, and non-standard layouts. OCR remains as a resilience path for network-blocked environments.
+- This prototype does not persist files, extracted label text, or review results.
+- Vision extraction is required for image labels. If a government network blocks the model endpoint, production should route to an approved internal or government cloud vision endpoint rather than silently degrading to conventional OCR.
 - The vision extractor returns advisory fields for warning boldness, legibility, and unusually small/buried warning text. These advisories can send an otherwise passing label to `Review`, but final type-size and boldness calls should still be confirmed visually in production.
 - PDF and COLA integration are out of scope for this prototype.
