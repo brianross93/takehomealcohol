@@ -5,6 +5,17 @@ type LabelExtractionPayload = {
   fileName?: string
 }
 
+type NetlifyEvent = {
+  httpMethod: string
+  body: string | null
+}
+
+type NetlifyResponse = {
+  statusCode: number
+  headers: Record<string, string>
+  body: string
+}
+
 type ModelExtraction = {
   rawText: string
   brandName: string | null
@@ -92,15 +103,16 @@ const extractionSchema = {
   ],
 } as const
 
-function jsonResponse(status: number, payload: unknown) {
-  return new Response(JSON.stringify(payload), {
-    status,
+function jsonResponse(statusCode: number, payload: unknown): NetlifyResponse {
+  return {
+    statusCode,
     headers: { 'Content-Type': 'application/json' },
-  })
+    body: JSON.stringify(payload),
+  }
 }
 
-export default async function handler(request: Request) {
-  if (request.method !== 'POST') {
+export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
+  if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' })
   }
 
@@ -109,7 +121,9 @@ export default async function handler(request: Request) {
   }
 
   try {
-    const payload = (await request.json()) as LabelExtractionPayload
+    const payload = event.body
+      ? (JSON.parse(event.body) as LabelExtractionPayload)
+      : {}
     const imageDataUrl = payload.imageDataUrl || ''
 
     if (!imageDataUrl.startsWith('data:image/')) {
@@ -172,8 +186,4 @@ export default async function handler(request: Request) {
       error: error instanceof Error ? error.message : 'Label extraction failed',
     })
   }
-}
-
-export const config = {
-  path: '/api/extract-label',
 }
