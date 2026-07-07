@@ -205,6 +205,10 @@ h2 {
   background: var(--surface-muted);
 }
 
+.reviewer-progress {
+  width: min(360px, 100%);
+}
+
 .metric {
   min-width: 0;
   padding: 16px 20px;

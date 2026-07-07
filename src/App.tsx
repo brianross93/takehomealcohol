@@ -12,10 +12,9 @@ import {
   Upload,
   XCircle,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import './App.css'
-import { PRELOADED_SUBMISSIONS } from './data/preloadedSubmissions'
 import { SAMPLE_LABELS } from './data/sampleLabels'
 import { extractWithOpenAI } from './lib/aiExtraction'
 import {
@@ -33,6 +32,11 @@ import {
 type QueueStatus = 'queued' | 'processing' | 'complete' | 'error'
 type ApplicationSource = 'manual' | 'csv' | 'provided'
 type HumanDecision = 'accepted' | 'rejected'
+type AddFilesOptions = {
+  replace?: boolean
+  applicationSource?: ApplicationSource
+  progressText?: string
+}
 
 type LabelItem = {
   id: string
@@ -44,7 +48,6 @@ type LabelItem = {
   applicationSource?: ApplicationSource
   file?: File
   rawText?: string
-  imagePath?: string
   previewUrl?: string
   result?: ReviewResult
   error?: string
@@ -55,6 +58,8 @@ type LabelItem = {
 
 const BEVERAGE_TYPES: BeverageType[] = ['Distilled Spirits', 'Wine', 'Malt Beverage']
 const BATCH_CONCURRENCY = 5
+const REVIEW_PREFETCH_COUNT = 3
+const PROVIDED_PACKET_PATH = '/preloaded-submissions'
 
 type ResultFilter = 'all' | ReviewStatus
 
@@ -65,6 +70,11 @@ const statusCopy: Record<ReviewStatus, string> = {
   ready: 'Ready',
   review: 'Review',
   missing: 'Missing',
+}
+
+const humanDecisionCopy: Record<HumanDecision, string> = {
+  accepted: 'Accepted',
+  rejected: 'Rejected',
 }
 
 function createId() {
@@ -139,32 +149,22 @@ function normalizeCsvHeader(value: string) {
 function makeFileItem(
   file: File,
   applicationByFileName: Record<string, ApplicationFields>,
+  applicationSource: ApplicationSource = 'csv',
+  progressText = 'Queued',
 ): LabelItem {
+  const hasApplication = Boolean(applicationByFileName[normalizeFileKey(file.name)])
+
   return {
     id: createId(),
     name: file.name,
     status: 'queued',
     progress: 0,
-    progressText: 'Queued',
+    progressText,
     application: applicationByFileName[normalizeFileKey(file.name)],
-    applicationSource: applicationByFileName[normalizeFileKey(file.name)] ? 'csv' : undefined,
+    applicationSource: hasApplication ? applicationSource : undefined,
     file,
     previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
   }
-}
-
-function makePreloadedItems(): LabelItem[] {
-  return PRELOADED_SUBMISSIONS.map((submission) => ({
-    id: createId(),
-    name: submission.name,
-    status: 'queued',
-    progress: 0,
-    progressText: 'Ready for review',
-    application: submission.application,
-    applicationSource: 'provided',
-    imagePath: submission.imagePath,
-    previewUrl: submission.imagePath,
-  }))
 }
 
 function unsupportedFileItem(file: File): LabelItem {
@@ -264,6 +264,20 @@ function csvToApplications(csv: string) {
   }, {})
 }
 
+function csvFileNames(csv: string) {
+  const rows = parseCsvRows(csv)
+  const [headerRow, ...dataRows] = rows
+  if (!headerRow?.length) return []
+
+  const headers = headerRow.map(normalizeCsvHeader)
+  const fileNameIndex = headers.indexOf(normalizeCsvHeader('fileName'))
+  if (fileNameIndex === -1) return []
+
+  return dataRows
+    .map((row) => row[fileNameIndex]?.trim())
+    .filter((fileName): fileName is string => Boolean(fileName))
+}
+
 function readTextFile(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -273,32 +287,38 @@ function readTextFile(file: File) {
   })
 }
 
-async function imagePathToFile(item: LabelItem) {
-  if (!item.imagePath) throw new Error('No label image is available for extraction.')
-
-  const response = await fetch(item.imagePath)
+async function urlToFile(url: string, fileName: string) {
+  const response = await fetch(url)
   if (!response.ok) {
-    throw new Error(`Unable to load bundled label image (${response.status}).`)
+    throw new Error(`Unable to load ${fileName} (${response.status}).`)
   }
 
   const blob = await response.blob()
-  return new File([blob], item.name, { type: blob.type || 'image/png' })
+  return new File([blob], fileName, { type: blob.type || 'image/png' })
 }
 
 function App() {
   const [application, setApplication] = useState<ApplicationFields>(DEFAULT_APPLICATION)
-  const [items, setItems] = useState<LabelItem[]>(() => makePreloadedItems())
+  const [items, setItems] = useState<LabelItem[]>([])
   const [pastedText, setPastedText] = useState('')
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [reviewAutopilot, setReviewAutopilot] = useState(false)
   const [activeItemId, setActiveItemId] = useState<string>()
   const [applicationByFileName, setApplicationByFileName] = useState<
     Record<string, ApplicationFields>
   >({})
   const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
+  const processingIds = useRef(new Set<string>())
+  const providedLoadStarted = useRef(false)
 
   useEffect(() => {
     void fetch('/api/extract-label?warmup=1').catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    if (providedLoadStarted.current) return
+
+    providedLoadStarted.current = true
+    void loadProvidedSubmissions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const stats = useMemo(() => {
@@ -341,6 +361,43 @@ function App() {
     ? items.findIndex((item) => item.id === activeItem.id) + 1
     : 0
   const activeApplication = activeItem?.application || application
+  const canDecideActive = Boolean(activeItem?.result) && activeItem?.status !== 'processing'
+
+  useEffect(() => {
+    if (!activeItem) return
+
+    const activeIndex = items.findIndex((item) => item.id === activeItem.id)
+    if (activeIndex === -1) return
+
+    items
+      .slice(activeIndex, activeIndex + REVIEW_PREFETCH_COUNT)
+      .filter((item) => item.status === 'queued' && !item.result)
+      .forEach((item) => {
+        void processItem(item)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeItem?.id, items])
+
+  useEffect(() => {
+    function handleReviewShortcut(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null
+      const targetTag = target?.tagName
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT') return
+
+      if (event.key.toLowerCase() === 'a' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        recordHumanDecision('accepted')
+      }
+
+      if (event.key.toLowerCase() === 'r' || event.key === 'ArrowLeft') {
+        event.preventDefault()
+        recordHumanDecision('rejected')
+      }
+    }
+
+    window.addEventListener('keydown', handleReviewShortcut)
+    return () => window.removeEventListener('keydown', handleReviewShortcut)
+  })
 
   const filteredItems = useMemo(() => {
     if (resultFilter === 'all') return items
@@ -361,27 +418,77 @@ function App() {
   }
 
   function retryItem(id: string) {
+    const item = items.find((queuedItem) => queuedItem.id === id)
+
     updateItem(id, {
       status: 'queued',
       progress: 0,
-      progressText: 'Queued',
+      progressText: 'Queued for retry',
       error: undefined,
       result: undefined,
     })
+
+    if (item) {
+      void processItem({
+        ...item,
+        status: 'queued',
+        progress: 0,
+        progressText: 'Queued for retry',
+        error: undefined,
+        result: undefined,
+      })
+    }
   }
 
-  function loadProvidedSubmissions() {
+  async function loadProvidedSubmissions() {
     items.forEach((item) => {
       if (item.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl)
     })
-    setItems(makePreloadedItems())
+    processingIds.current.clear()
+    setItems([])
     setApplicationByFileName({})
     setActiveItemId(undefined)
-    setReviewAutopilot(false)
+    setResultFilter('all')
+
+    try {
+      const csvResponse = await fetch(`${PROVIDED_PACKET_PATH}/application-records.csv`)
+      if (!csvResponse.ok) {
+        throw new Error(`Unable to load provided forms (${csvResponse.status}).`)
+      }
+
+      const csv = await csvResponse.text()
+      const csvFile = new File([csv], 'application-records.csv', { type: 'text/csv' })
+      const imageFiles = await Promise.all(
+        csvFileNames(csv).map((fileName) =>
+          urlToFile(`${PROVIDED_PACKET_PATH}/${encodeURIComponent(fileName)}`, fileName),
+        ),
+      )
+
+      await addFiles([csvFile, ...imageFiles], {
+        replace: true,
+        applicationSource: 'provided',
+        progressText: 'Queued for pre-analysis',
+      })
+    } catch (error) {
+      setItems([
+        {
+          id: createId(),
+          name: 'provided-review-packet',
+          status: 'error',
+          progress: 0,
+          progressText: 'Load failed',
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Unable to load provided review packet.',
+          canRetry: false,
+        },
+      ])
+    }
   }
 
   function recordHumanDecision(decision: HumanDecision) {
-    if (!activeItem?.result || isProcessing) return
+    if (!activeItem?.result || activeItem.status === 'processing') return
 
     const currentIndex = items.findIndex((item) => item.id === activeItem.id)
     const nextItem =
@@ -395,9 +502,6 @@ function App() {
 
     if (nextItem) {
       setActiveItemId(nextItem.id)
-      if (reviewAutopilot && nextItem.status === 'queued') {
-        void analyzeItem(nextItem)
-      }
     }
   }
 
@@ -412,7 +516,7 @@ function App() {
     )
   }
 
-  async function addFiles(fileList: FileList | File[]) {
+  async function addFiles(fileList: FileList | File[], options: AddFilesOptions = {}) {
     const files = Array.from(fileList)
     const csvFiles = files.filter(isCsvFile)
     let importedApplications: Record<string, ApplicationFields> = {}
@@ -425,34 +529,40 @@ function App() {
     }
 
     const nextApplications = {
-      ...applicationByFileName,
+      ...(options.replace ? {} : applicationByFileName),
       ...importedApplications,
     }
     const nextItems = files
       .filter((file) => !isCsvFile(file))
       .map((file) =>
         isSupportedImageFile(file)
-          ? makeFileItem(file, nextApplications)
+          ? makeFileItem(
+              file,
+              nextApplications,
+              options.applicationSource || 'csv',
+              options.progressText || 'Queued',
+            )
           : unsupportedFileItem(file),
       )
       .concat(csvErrors)
 
-    if (csvFiles.length) {
+    if (csvFiles.length || options.replace) {
       setApplicationByFileName(nextApplications)
     }
 
-    setItems((current) => [
-      ...current.map((item) => ({
-        ...item,
-        application:
-          importedApplications[normalizeFileKey(item.name)] ||
-          item.application,
-        applicationSource: importedApplications[normalizeFileKey(item.name)]
-          ? 'csv'
-          : item.applicationSource,
-      })),
-      ...nextItems,
-    ])
+    setItems((current) => {
+      const updatedCurrent = options.replace
+        ? []
+        : current.map((item) => ({
+            ...item,
+            application: importedApplications[normalizeFileKey(item.name)] || item.application,
+            applicationSource: importedApplications[normalizeFileKey(item.name)]
+              ? options.applicationSource || 'csv'
+              : item.applicationSource,
+          }))
+
+      return [...updatedCurrent, ...nextItems]
+    })
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -529,6 +639,9 @@ function App() {
   }
 
   async function processItem(item: LabelItem) {
+    if (processingIds.current.has(item.id)) return
+
+    processingIds.current.add(item.id)
     const startedAt = performance.now()
     updateItem(item.id, {
       status: 'processing',
@@ -543,7 +656,11 @@ function App() {
         : undefined
 
       if (!extracted) {
-        const extractionFile = item.file || (await imagePathToFile(item))
+        if (!item.file) {
+          throw new Error('No label image is available for extraction.')
+        }
+
+        const extractionFile = item.file
         extracted = await extractWithOpenAI(extractionFile, (progress) => {
           updateItem(item.id, {
             progress: Math.max(progress.progress, 0.05),
@@ -569,32 +686,25 @@ function App() {
         status: 'error',
         progress: 0,
         progressText: 'Extraction failed',
+        canRetry: true,
         error:
           error instanceof Error
             ? error.message
             : 'AI extraction failed. Check the API configuration or retry.',
       })
+    } finally {
+      processingIds.current.delete(item.id)
     }
   }
 
-  async function analyzeItem(item: LabelItem) {
-    if (isProcessing) return
-    setIsProcessing(true)
-    await processItem(item)
-    setIsProcessing(false)
-  }
-
-  function analyzeActiveSubmission() {
+  function retryActiveAnalysis() {
     if (!activeItem || activeItem.status === 'processing') return
-    setReviewAutopilot(true)
-    void analyzeItem(activeItem)
+    retryItem(activeItem.id)
   }
 
   async function verifyQueuedLabels() {
     const queue = items.filter((item) => item.status === 'queued')
-    if (!queue.length || isProcessing) return
-
-    setIsProcessing(true)
+    if (!queue.length) return
 
     const workerCount = Math.min(BATCH_CONCURRENCY, queue.length)
     const workers = Array.from({ length: workerCount }, async (_, workerIndex) => {
@@ -604,7 +714,6 @@ function App() {
     })
 
     await Promise.all(workers)
-    setIsProcessing(false)
   }
 
   function recheckCompletedLabels() {
@@ -630,18 +739,19 @@ function App() {
     })
     setItems([])
     setActiveItemId(undefined)
-    setReviewAutopilot(false)
+    processingIds.current.clear()
   }
 
   function downloadCsv() {
     const rows: Array<Array<string | number>> = [
       [
         'label',
-        'overall_status',
-        'overall_score',
-        'duration_ms',
-        'application_source',
-        'human_decision',
+        'aiRecommendation',
+        'aiScore',
+        'durationMs',
+        'applicationSource',
+        'agentDecision',
+        'agentDecisionAt',
         'check',
         'check_status',
         'expected',
@@ -659,6 +769,7 @@ function App() {
           Math.round(item.result.durationMs),
           applicationSourceLabel(item.applicationSource),
           item.humanDecision || '',
+          item.decidedAt || '',
           check.label,
           check.status,
           check.expected,
@@ -718,24 +829,22 @@ function App() {
                 </h2>
               </div>
               <div className="reviewer-actions">
+                {activeItem.status === 'error' && activeItem.canRetry !== false ? (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={retryActiveAnalysis}
+                  >
+                    <RefreshCw size={18} />
+                    Retry analysis
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="primary-button"
-                  onClick={analyzeActiveSubmission}
-                  disabled={isProcessing || activeItem.status === 'processing'}
-                >
-                  {activeItem.status === 'processing' ? (
-                    <Loader2 className="spin" size={18} />
-                  ) : (
-                    <Play size={18} />
-                  )}
-                  {activeItem.result ? 'Reanalyze' : 'Begin review'}
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
                   onClick={() => recordHumanDecision('accepted')}
-                  disabled={!activeItem.result || isProcessing}
+                  disabled={!canDecideActive}
+                  title="Accept and advance (A or Right Arrow)"
                 >
                   <CheckCircle2 size={18} />
                   Accept
@@ -744,7 +853,8 @@ function App() {
                   type="button"
                   className="secondary-button danger"
                   onClick={() => recordHumanDecision('rejected')}
-                  disabled={!activeItem.result || isProcessing}
+                  disabled={!canDecideActive}
+                  title="Reject and advance (R or Left Arrow)"
                 >
                   <XCircle size={18} />
                   Reject
@@ -768,6 +878,10 @@ function App() {
 
                 <div className="classifier-summary">
                   <StatusPill item={activeItem} />
+                  <span>
+                    AI recommendation:{' '}
+                    {activeItem.result ? statusCopy[activeItem.result.status] : 'Pending'}
+                  </span>
                   <span>{applicationSourceLabel(activeItem.applicationSource)}</span>
                   {activeItem.result ? (
                     <span>Score {(activeItem.result.score * 100).toFixed(0)}%</span>
@@ -775,8 +889,10 @@ function App() {
                     <span>{activeItem.progressText}</span>
                   )}
                   {activeItem.humanDecision ? (
-                    <span>Human {activeItem.humanDecision}</span>
-                  ) : null}
+                    <span>Agent decision: {humanDecisionCopy[activeItem.humanDecision]}</span>
+                  ) : (
+                    <span>Agent decision: pending</span>
+                  )}
                 </div>
 
                 {activeItem.error ? <p className="error-text">{activeItem.error}</p> : null}
@@ -789,8 +905,25 @@ function App() {
                   </div>
                 ) : (
                   <div className="reviewer-prompt">
-                    <FileText size={24} aria-hidden="true" />
-                    <p>Click Begin review to analyze this label against the submitted form.</p>
+                    {activeItem.status === 'processing' ? (
+                      <Loader2 className="spin" size={24} aria-hidden="true" />
+                    ) : activeItem.status === 'error' ? (
+                      <XCircle size={24} aria-hidden="true" />
+                    ) : (
+                      <FileText size={24} aria-hidden="true" />
+                    )}
+                    <p>
+                      {activeItem.status === 'processing'
+                        ? 'Analyzing this label while you review the form and image.'
+                        : activeItem.status === 'error'
+                          ? 'Extraction failed. Retry analysis or review the submission manually.'
+                          : 'Queued for automatic pre-analysis.'}
+                    </p>
+                    {activeItem.status === 'processing' ? (
+                      <div className="progress-track reviewer-progress" aria-label="Analysis progress">
+                        <div style={{ width: `${Math.round(activeItem.progress * 100)}%` }} />
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -896,16 +1029,16 @@ function App() {
                 type="button"
                 className="primary-button"
                 onClick={verifyQueuedLabels}
-                disabled={stats.queued === 0 || isProcessing}
+                disabled={stats.queued === 0}
               >
-                {isProcessing ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
+                {stats.processing > 0 ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
                 Verify
               </button>
               <button
                 type="button"
                 className="secondary-button icon-only"
                 onClick={recheckCompletedLabels}
-                disabled={stats.reviewed === 0 || isProcessing}
+                disabled={stats.reviewed === 0}
                 title="Recheck completed labels"
               >
                 <RefreshCw size={18} />
@@ -923,7 +1056,7 @@ function App() {
                 type="button"
                 className="secondary-button icon-only danger"
                 onClick={clearQueue}
-                disabled={items.length === 0 || isProcessing}
+                disabled={items.length === 0}
                 title="Clear batch"
               >
                 <Trash2 size={18} />
@@ -1139,13 +1272,16 @@ function ResultItem({
       {item.result ? (
         <>
           <div className="result-meta">
+            <span>AI recommendation {statusCopy[item.result.status]}</span>
             <span>Score {(item.result.score * 100).toFixed(0)}%</span>
             <span>
               {extractionSourceLabel(item.result.extracted.source)}{' '}
               {item.result.extracted.confidence.toFixed(0)}%
             </span>
             <span>{applicationSourceLabel(item.applicationSource)}</span>
-            {item.humanDecision ? <span>Human {item.humanDecision}</span> : null}
+            {item.humanDecision ? (
+              <span>Agent decision {humanDecisionCopy[item.humanDecision]}</span>
+            ) : null}
             <span>{formatDuration(item.result.durationMs)}</span>
           </div>
 

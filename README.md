@@ -10,27 +10,31 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 - PDF and HEIC/HEIF uploads surface explicit unsupported-format errors in this prototype instead of flowing into verification.
 - Processes queued uploads with a small concurrency pool, retry/backoff for transient API limits, and per-item results as soon as each label finishes.
 - Filters completed rows to `Ready`, `Review`, or `Missing` so agents can focus on exceptions in large batches.
-- Loads a provided review packet by default: application-form rows plus attached label images.
-- Lets the human reviewer record an `Accept` or `Reject` decision and automatically advance to the next form.
+- Loads a provided review packet by default: application-form rows plus attached label images, routed through the same CSV/image import path as user uploads.
+- Prefetches the current form plus the next two labels, so the reviewer can inspect the form and artwork while AI analysis completes in the background.
+- Lets the human reviewer record an `Accept` or `Reject` decision, keeps that separate from the AI recommendation, and automatically advances to the next form.
+- Supports `A`/Right Arrow for accept and `R`/Left Arrow for reject in the one-by-one review queue.
 - Supports manual pasted label text for quick reviewer testing.
 - Includes a `Samples` button that preloads review fixtures without needing local files.
 - Compares extracted label text with application fields for brand, class/type, ABV, net contents, bottler/producer, country of origin, and the government warning.
 - Returns a clear `Ready`, `Review`, or `Missing` triage status with field-level explanations. The classifier does not make the final regulatory decision; it calls attention to what the human agent should review.
-- Includes sample labels and CSV export for reviewer handoff.
+- Includes sample labels and CSV export with `aiRecommendation`, `agentDecision`, and `agentDecisionAt` fields for reviewer handoff.
 
 ## Reviewer Walkthrough
 
 Open `https://alcoholclassifier.netlify.app`. The app starts with a provided review packet already loaded, so the reviewer does not need to find files before trying the workflow.
 
 1. The top review station shows the current submitted application form and its attached label image.
-2. Click `Begin review` to run the classifier for that submission.
+2. The app automatically starts AI analysis for the current label and prefetches the next two labels in the queue.
 3. Review the green/yellow/red field checks:
    - green means the label appears to match the submitted form,
    - yellow means the field is present but needs human attention,
    - red means the required field was not found.
-4. Click `Accept` or `Reject` as the human decision. The app records that decision and moves to the next form.
+4. Click `Accept` or `Reject` as the human decision, or use `A`/Right Arrow and `R`/Left Arrow. The app records that decision and moves to the next form.
 
-The provided packet is also available as `public/preloaded-submissions/application-records.csv` with matching images in `public/preloaded-submissions/`. Reviewers can clear the queue and click `Provided forms` to reload it. They can also upload their own CSV and images; the CSV `fileName` column should match the image filenames.
+If the reviewer clicks faster than prefetch finishes, the next form and label still open immediately and the checklist area briefly shows an analyzing state. The agent is never blocked from seeing the submission.
+
+The provided packet is also available as `public/preloaded-submissions/application-records.csv` with matching images in `public/preloaded-submissions/`. Reviewers can clear the queue and click `Provided forms` to reload it. That button fetches the bundled CSV and image files, converts them to browser `File` objects, and passes them through the same import machinery used by custom uploads. Reviewers can also upload their own CSV and images; the CSV `fileName` column should match the image filenames.
 
 The custom upload path is intentionally secondary to the assignment scenario. It is still useful for trying new labels: upload a label image with a matching CSV row, or enter expected values in the manual application form. The app then uses the same extractor and field checks against that supplied application data. Without application data, the tool can still surface label text and warning issues, but it cannot prove that brand, class/type, ABV, net contents, bottler, or country of origin match an application.
 
@@ -87,6 +91,8 @@ old-tom.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (
 
 Rows without a matching CSV record use the manual application form. The results CSV includes whether the application record came from CSV or manual entry. PNG, JPG, and WEBP labels are extractable in the prototype; PDF and HEIC/HEIF files are accepted by the uploader but produce an explicit unsupported-format queue error so agents know to convert them rather than receiving misleading compliance failures.
 
+The results CSV records both sides of the review: `aiRecommendation` is the classifier's `Ready`/`Review`/`Missing` triage, while `agentDecision` and `agentDecisionAt` capture the human Accept/Reject action and timestamp. In production, disagreements between those columns would be useful audit data and a natural source for regression tests or model-improvement review.
+
 ## Technical Approach
 
 - `netlify/functions/extract-label.ts` calls the OpenAI Responses API with image input and Structured Outputs to produce schema-constrained extraction JSON.
@@ -94,7 +100,7 @@ Rows without a matching CSV record use the manual application form. The results 
 - `src/lib/aiExtraction.ts` retries rate-limited or transient extraction failures and honors `Retry-After`.
 - `src/lib/verification.ts` contains the deterministic review engine. Required fields use a green/yellow/red model: green means the label appears to match the application, yellow means the field is present but differs or needs human attention, and red means the required field was not found.
 - Alcohol content includes an internal ABV/proof consistency check, so a label that prints `45% Alc./Vol.` and an inconsistent proof value is flagged for agent review even if the ABV alone matches the application.
-- `src/App.tsx` provides the agent-facing workflow: application record, upload queue, sample batch, status summary, explanations, extracted label text, and CSV export.
+- `src/App.tsx` provides the agent-facing workflow: application record, one-by-one review queue, prefetching, custom upload batch, status summary, explanations, extracted label text, and CSV export.
 - `public/samples/` contains two generated sample labels: one compliant and one intentionally defective.
 
 The health warning rule is based on TTB guidance for beverage alcohol labels, including the current TTB pages for [distilled spirits health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/distilled-spirits/ds-labeling-home/ds-health-warning) and [malt beverage health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/beer/labeling/malt-beverage-health-warning).
@@ -125,7 +131,7 @@ Measured on July 7, 2026 with the generated Old Tom label image and the deployed
 
 The prototype is accurate and close to Sarah's "about 5 seconds" target on the deployed path. The remaining variance appears to be mostly serverless/function overhead plus network variability; the same compressed image/model path is under 5 seconds when called locally. A production deployment should keep the same extractor interface but run it as a warm, colocated service rather than a cold serverless function.
 
-For 200-300 label batches, the UI renders results as each item completes, shows completed/total progress, running triage counts, and filters to `Review` or `Missing` rows. The default concurrency is capped at 5 to reduce rate-limit pressure. In this prototype the review station analyzes each form on demand; in production the same extraction and verification step could run ahead of time, overnight or as soon as a batch arrives, so the agent opens a precomputed queue and only spends time on judgment.
+For 200-300 label batches, the UI renders results as each item completes, shows completed/total progress, running triage counts, and filters to `Review` or `Missing` rows. The default concurrency is capped at 5 to reduce rate-limit pressure. In the one-by-one review station, the demo prefetches just in time: when the reviewer opens item N, extraction for N, N+1, and N+2 starts in the background. Since an agent spends longer inspecting the form and label than extraction takes, the next verdict is usually ready before they advance. In production the same pipeline can run overnight or as soon as a batch arrives, so agents arrive to a fully pre-analyzed queue and only spend time on judgment.
 
 Small deployed batch validation:
 
