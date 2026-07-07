@@ -50,6 +50,17 @@ If the serverless route is not deployed or `OPENAI_API_KEY` is not configured, t
 
 The health warning rule is based on TTB guidance for beverage alcohol labels, including the current TTB pages for [distilled spirits health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/distilled-spirits/ds-labeling-home/ds-health-warning) and [malt beverage health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/beer/labeling/malt-beverage-health-warning).
 
+## Testing Labels
+
+The repo includes 12 generated PNG labels with known expected outcomes and 12 rendered TTB sample pages for real-world layout variety. See `docs/test-plan.md`.
+
+Useful commands:
+
+```bash
+npm run test:labels
+npm run test:extract:openai -- --limit=1
+```
+
 ## Assumptions And Tradeoffs
 
 - This prototype does not persist files, OCR text, or review results.

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint src",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:labels": "python scripts/generate_test_labels.py",
+    "test:extract:openai": "node scripts/test_openai_extraction.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.23.0",

@@ -1,0 +1,170 @@
+[
+  {
+    "id": "01-compliant-bourbon",
+    "file": "/test-labels/generated/01-compliant-bourbon.png",
+    "expectedStatus": "ready",
+    "application": {
+      "brandName": "OLD TOM DISTILLERY",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Old Tom Distillery",
+      "bottlerAddress": "Louisville, KY",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "02-brand-punctuation-case",
+    "file": "/test-labels/generated/02-brand-punctuation-case.png",
+    "expectedStatus": "ready",
+    "application": {
+      "brandName": "Stone's Throw",
+      "classType": "American Single Malt Whiskey",
+      "alcoholContent": "48% Alc./Vol. (96 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Stone's Throw Spirits",
+      "bottlerAddress": "Denver, CO",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "03-title-case-warning",
+    "file": "/test-labels/generated/03-title-case-warning.png",
+    "expectedStatus": "reject",
+    "application": {
+      "brandName": "OLD TOM DISTILLERY",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Old Tom Distillery",
+      "bottlerAddress": "Louisville, KY",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "04-wrong-abv",
+    "file": "/test-labels/generated/04-wrong-abv.png",
+    "expectedStatus": "reject",
+    "application": {
+      "brandName": "OLD TOM DISTILLERY",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Old Tom Distillery",
+      "bottlerAddress": "Louisville, KY",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "05-wrong-net-contents",
+    "file": "/test-labels/generated/05-wrong-net-contents.png",
+    "expectedStatus": "reject",
+    "application": {
+      "brandName": "OLD TOM DISTILLERY",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Old Tom Distillery",
+      "bottlerAddress": "Louisville, KY",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "06-missing-warning",
+    "file": "/test-labels/generated/06-missing-warning.png",
+    "expectedStatus": "reject",
+    "application": {
+      "brandName": "OLD TOM DISTILLERY",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Old Tom Distillery",
+      "bottlerAddress": "Louisville, KY",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "07-low-contrast-glare",
+    "file": "/test-labels/generated/07-low-contrast-glare.png",
+    "expectedStatus": "ready",
+    "application": {
+      "brandName": "OLD TOM DISTILLERY",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Old Tom Distillery",
+      "bottlerAddress": "Louisville, KY",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "08-angled-photo",
+    "file": "/test-labels/generated/08-angled-photo.png",
+    "expectedStatus": "ready",
+    "application": {
+      "brandName": "OLD TOM DISTILLERY",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Old Tom Distillery",
+      "bottlerAddress": "Louisville, KY",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "09-imported-tequila",
+    "file": "/test-labels/generated/09-imported-tequila.png",
+    "expectedStatus": "ready",
+    "application": {
+      "brandName": "Sierra Norte",
+      "classType": "Tequila Blanco",
+      "alcoholContent": "40% Alc./Vol. (80 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Importado Por Borderline Imports",
+      "bottlerAddress": "Austin, TX",
+      "countryOfOrigin": "Mexico"
+    }
+  },
+  {
+    "id": "10-wine-with-sulfites",
+    "file": "/test-labels/generated/10-wine-with-sulfites.png",
+    "expectedStatus": "ready",
+    "application": {
+      "brandName": "Downriver Cellars",
+      "classType": "California Cabernet Sauvignon",
+      "alcoholContent": "13.8% Alc. by Vol.",
+      "netContents": "750 mL",
+      "bottlerName": "Downriver Cellars",
+      "bottlerAddress": "Napa, CA",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "11-tiny-warning",
+    "file": "/test-labels/generated/11-tiny-warning.png",
+    "expectedStatus": "ready",
+    "application": {
+      "brandName": "OLD TOM DISTILLERY",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Old Tom Distillery",
+      "bottlerAddress": "Louisville, KY",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "id": "12-bad-warning-wording",
+    "file": "/test-labels/generated/12-bad-warning-wording.png",
+    "expectedStatus": "reject",
+    "application": {
+      "brandName": "OLD TOM DISTILLERY",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "bottlerName": "Old Tom Distillery",
+      "bottlerAddress": "Louisville, KY",
+      "countryOfOrigin": "United States"
+    }
+  }
+]
