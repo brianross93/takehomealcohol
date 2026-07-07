@@ -11,6 +11,7 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 - Processes queued uploads with a small concurrency pool, retry/backoff for transient API limits, and per-item results as soon as each label finishes.
 - Filters completed rows to `Ready`, `Review`, or `Reject` so agents can focus on exceptions in large batches.
 - Supports manual pasted label text for quick reviewer testing.
+- Includes a `Samples` button that preloads review fixtures without needing local files.
 - Compares extracted label text with application fields for brand, class/type, ABV, net contents, bottler/producer, country of origin, and the government warning.
 - Returns a clear `Ready`, `Review`, or `Reject` decision with field-level explanations.
 - Includes sample labels and CSV export for reviewer handoff.
@@ -19,10 +20,18 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 
 ```bash
 npm install
+npm run dev
+```
+
+Open the local URL printed by Vite, usually `http://127.0.0.1:5173/`. This runs the UI, sample flow, pasted-text flow, and deterministic verifier.
+
+For local image extraction through the Netlify Function route:
+
+```bash
 netlify dev
 ```
 
-Open the local URL printed by Netlify Dev, usually `http://127.0.0.1:8888/`. Plain `npm run dev` runs the Vite front end only; image extraction needs the Netlify Function route.
+That requires `OPENAI_API_KEY` in `.env.local`. The deployed app is already configured for image extraction.
 
 Quality checks:
 
@@ -96,7 +105,20 @@ Measured on July 7, 2026 with the generated Old Tom label image and the deployed
 
 The prototype is accurate and close to Sarah's "about 5 seconds" target on the deployed path. The remaining variance appears to be mostly serverless/function overhead plus network variability; the same compressed image/model path is under 5 seconds when called locally. A production deployment should keep the same extractor interface but run it as a warm, colocated service rather than a cold serverless function.
 
-For 200-300 label batches, the UI renders results as each item completes, shows completed/total progress, running verdict counts, ETA, and filters to `Review` or `Reject` rows. The default concurrency is capped at 5 to reduce rate-limit pressure. Production should validate the final concurrency and cost against the agency's chosen model deployment; a planning estimate for 300 optimized labels is low single-digit dollars, but the exact value depends on the contracted model endpoint and image detail setting.
+For 200-300 label batches, the UI renders results as each item completes, shows completed/total progress, running verdict counts, ETA, and filters to `Review` or `Reject` rows. The default concurrency is capped at 5 to reduce rate-limit pressure.
+
+Small deployed batch validation:
+
+| Batch Check | Result |
+| --- | ---: |
+| Generated labels uploaded with matching CSV application records | 36 |
+| Synthetic `429 Retry-After` responses injected before real retries | 5 |
+| Real extraction POSTs after retry | 36 |
+| Final queue state | 36/36 done, 0 stuck, 0 extraction errors |
+| Verdicts vs fixture manifest | 36/36 matched |
+| Wall-clock time | ~50.8s |
+
+Production should validate final concurrency and cost against the agency's chosen model deployment; a planning estimate for 300 optimized labels is low single-digit dollars, but the exact value depends on the contracted model endpoint and image detail setting.
 
 ## Assumptions And Tradeoffs
 
