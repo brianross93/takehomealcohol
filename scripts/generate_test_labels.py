@@ -278,7 +278,7 @@ CASES = [
             "classType": "Tequila Blanco",
             "alcoholContent": "40% Alc./Vol. (80 Proof)",
             "netContents": "750 mL",
-            "bottlerName": "Importado Por Borderline Imports",
+            "bottlerName": "Borderline Imports",
             "bottlerAddress": "Austin, TX",
             "countryOfOrigin": "Mexico",
         },
