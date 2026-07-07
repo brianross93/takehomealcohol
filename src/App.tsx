@@ -13,7 +13,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, DragEvent } from 'react'
+import type { ChangeEvent, DragEvent, MutableRefObject } from 'react'
 import './App.css'
 import { SAMPLE_LABELS } from './data/sampleLabels'
 import { extractWithOpenAI } from './lib/aiExtraction'
@@ -30,12 +30,19 @@ import {
 } from './lib/verification'
 
 type QueueStatus = 'queued' | 'processing' | 'complete' | 'error'
-type ApplicationSource = 'manual' | 'csv' | 'provided'
+type ApplicationSource = 'manual' | 'csv' | 'provided' | 'extracted'
 type HumanDecision = 'accepted' | 'rejected'
 type AddFilesOptions = {
   replace?: boolean
   applicationSource?: ApplicationSource
   progressText?: string
+}
+type ProcessItemOptions = {
+  updateItem?: (id: string, patch: Partial<LabelItem>) => void
+  processingIds?: MutableRefObject<Set<string>>
+  fallbackApplication?: ApplicationFields
+  draftFromExtraction?: boolean
+  onDraftApplication?: (application: ApplicationFields) => void
 }
 
 type LabelItem = {
@@ -77,6 +84,17 @@ const humanDecisionCopy: Record<HumanDecision, string> = {
   rejected: 'Rejected',
 }
 
+const EMPTY_APPLICATION: ApplicationFields = {
+  beverageType: 'Distilled Spirits',
+  brandName: '',
+  classType: '',
+  alcoholContent: '',
+  netContents: '',
+  bottlerName: '',
+  bottlerAddress: '',
+  countryOfOrigin: '',
+}
+
 function createId() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
 }
@@ -94,6 +112,7 @@ function extractionSourceLabel(source: ExtractedFields['source'] | undefined) {
 function applicationSourceLabel(source: ApplicationSource | undefined) {
   if (source === 'provided') return 'Provided form'
   if (source === 'csv') return 'CSV record'
+  if (source === 'extracted') return 'Extracted draft'
   return 'Manual record'
 }
 
@@ -297,16 +316,123 @@ async function urlToFile(url: string, fileName: string) {
   return new File([blob], fileName, { type: blob.type || 'image/png' })
 }
 
+function hasApplicationData(application: ApplicationFields) {
+  return [
+    application.brandName,
+    application.classType,
+    application.alcoholContent,
+    application.netContents,
+    application.bottlerName,
+    application.bottlerAddress,
+    application.countryOfOrigin,
+  ].some((value) => value.trim())
+}
+
+function applicationFromExtraction(
+  extracted: ExtractedFields,
+  fallback: ApplicationFields,
+): ApplicationFields {
+  return {
+    beverageType: fallback.beverageType,
+    brandName: extracted.brandName || fallback.brandName,
+    classType: extracted.classType || fallback.classType,
+    alcoholContent: extracted.alcoholContent || fallback.alcoholContent,
+    netContents: extracted.netContents || fallback.netContents,
+    bottlerName: extracted.bottler || fallback.bottlerName,
+    bottlerAddress: fallback.bottlerAddress,
+    countryOfOrigin: extracted.countryOfOrigin || fallback.countryOfOrigin,
+  }
+}
+
+function summarizeItems(items: LabelItem[]) {
+  const reviewed = items.filter((item) => item.result)
+  const completed = items.filter((item) => item.result || item.status === 'error')
+  const ready = reviewed.filter((item) => item.result?.status === 'ready').length
+  const review = reviewed.filter((item) => item.result?.status === 'review').length
+  const missing = reviewed.filter((item) => item.result?.status === 'missing').length
+  const accepted = items.filter((item) => item.humanDecision === 'accepted').length
+  const rejected = items.filter((item) => item.humanDecision === 'rejected').length
+  const averageMs =
+    reviewed.reduce((sum, item) => sum + (item.result?.durationMs || 0), 0) /
+    Math.max(reviewed.length, 1)
+
+  return {
+    total: items.length,
+    queued: items.filter((item) => item.status === 'queued').length,
+    processing: items.filter((item) => item.status === 'processing').length,
+    completed: completed.length,
+    reviewed: reviewed.length,
+    ready,
+    review,
+    missing,
+    accepted,
+    rejected,
+    averageMs,
+    etaMs: averageMs * (items.length - completed.length),
+  }
+}
+
+function downloadItemsCsv(items: LabelItem[], fileName: string) {
+  const rows: Array<Array<string | number>> = [
+    [
+      'label',
+      'aiRecommendation',
+      'aiScore',
+      'durationMs',
+      'applicationSource',
+      'agentDecision',
+      'agentDecisionAt',
+      'check',
+      'check_status',
+      'expected',
+      'found',
+      'message',
+    ],
+  ]
+
+  items.forEach((item) => {
+    item.result?.checks.forEach((check) => {
+      rows.push([
+        item.name,
+        statusCopy[item.result.status],
+        item.result.score.toFixed(3),
+        Math.round(item.result.durationMs),
+        applicationSourceLabel(item.applicationSource),
+        item.humanDecision || '',
+        item.decidedAt || '',
+        check.label,
+        check.status,
+        check.expected,
+        check.found,
+        check.message,
+      ])
+    })
+  })
+
+  const csv = rows.map((row) => row.map(csvEscape).join(',')).join('\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 function App() {
-  const [application, setApplication] = useState<ApplicationFields>(DEFAULT_APPLICATION)
+  const [application, setApplication] = useState<ApplicationFields>(EMPTY_APPLICATION)
   const [items, setItems] = useState<LabelItem[]>([])
+  const [customItems, setCustomItems] = useState<LabelItem[]>([])
   const [pastedText, setPastedText] = useState('')
   const [activeItemId, setActiveItemId] = useState<string>()
   const [applicationByFileName, setApplicationByFileName] = useState<
     Record<string, ApplicationFields>
   >({})
-  const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
+  const [customApplicationByFileName, setCustomApplicationByFileName] = useState<
+    Record<string, ApplicationFields>
+  >({})
+  const [customResultFilter, setCustomResultFilter] = useState<ResultFilter>('all')
   const processingIds = useRef(new Set<string>())
+  const customProcessingIds = useRef(new Set<string>())
   const providedLoadStarted = useRef(false)
 
   useEffect(() => {
@@ -321,33 +447,8 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const stats = useMemo(() => {
-    const reviewed = items.filter((item) => item.result)
-    const completed = items.filter((item) => item.result || item.status === 'error')
-    const ready = reviewed.filter((item) => item.result?.status === 'ready').length
-    const review = reviewed.filter((item) => item.result?.status === 'review').length
-    const missing = reviewed.filter((item) => item.result?.status === 'missing').length
-    const accepted = items.filter((item) => item.humanDecision === 'accepted').length
-    const rejected = items.filter((item) => item.humanDecision === 'rejected').length
-    const averageMs =
-      reviewed.reduce((sum, item) => sum + (item.result?.durationMs || 0), 0) /
-      Math.max(reviewed.length, 1)
-
-    return {
-      total: items.length,
-      queued: items.filter((item) => item.status === 'queued').length,
-      processing: items.filter((item) => item.status === 'processing').length,
-      completed: completed.length,
-      reviewed: reviewed.length,
-      ready,
-      review,
-      missing,
-      accepted,
-      rejected,
-      averageMs,
-      etaMs: averageMs * (items.length - completed.length),
-    }
-  }, [items])
+  const stats = useMemo(() => summarizeItems(items), [items])
+  const customStats = useMemo(() => summarizeItems(customItems), [customItems])
 
   const activeItem = useMemo(
     () =>
@@ -399,10 +500,10 @@ function App() {
     return () => window.removeEventListener('keydown', handleReviewShortcut)
   })
 
-  const filteredItems = useMemo(() => {
-    if (resultFilter === 'all') return items
-    return items.filter((item) => item.result?.status === resultFilter)
-  }, [items, resultFilter])
+  const filteredCustomItems = useMemo(() => {
+    if (customResultFilter === 'all') return customItems
+    return customItems.filter((item) => item.result?.status === customResultFilter)
+  }, [customItems, customResultFilter])
 
   function updateApplication<Field extends keyof ApplicationFields>(
     field: Field,
@@ -413,6 +514,12 @@ function App() {
 
   function updateItem(id: string, patch: Partial<LabelItem>) {
     setItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    )
+  }
+
+  function updateCustomItem(id: string, patch: Partial<LabelItem>) {
+    setCustomItems((current) =>
       current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     )
   }
@@ -440,6 +547,38 @@ function App() {
     }
   }
 
+  function retryCustomItem(id: string) {
+    const item = customItems.find((queuedItem) => queuedItem.id === id)
+
+    updateCustomItem(id, {
+      status: 'queued',
+      progress: 0,
+      progressText: 'Queued for retry',
+      error: undefined,
+      result: undefined,
+    })
+
+    if (item) {
+      void processItem(
+        {
+          ...item,
+          status: 'queued',
+          progress: 0,
+          progressText: 'Queued for retry',
+          error: undefined,
+          result: undefined,
+        },
+        {
+          updateItem: updateCustomItem,
+          processingIds: customProcessingIds,
+          fallbackApplication: application,
+          draftFromExtraction: true,
+          onDraftApplication: setApplication,
+        },
+      )
+    }
+  }
+
   async function loadProvidedSubmissions() {
     items.forEach((item) => {
       if (item.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl)
@@ -448,7 +587,6 @@ function App() {
     setItems([])
     setApplicationByFileName({})
     setActiveItemId(undefined)
-    setResultFilter('all')
 
     try {
       const csvResponse = await fetch(`${PROVIDED_PACKET_PATH}/application-records.csv`)
@@ -464,7 +602,7 @@ function App() {
         ),
       )
 
-      await addFiles([csvFile, ...imageFiles], {
+      await addReviewFiles([csvFile, ...imageFiles], {
         replace: true,
         applicationSource: 'provided',
         progressText: 'Queued for pre-analysis',
@@ -516,7 +654,7 @@ function App() {
     )
   }
 
-  async function addFiles(fileList: FileList | File[], options: AddFilesOptions = {}) {
+  async function addReviewFiles(fileList: FileList | File[], options: AddFilesOptions = {}) {
     const files = Array.from(fileList)
     const csvFiles = files.filter(isCsvFile)
     let importedApplications: Record<string, ApplicationFields> = {}
@@ -565,8 +703,57 @@ function App() {
     })
   }
 
+  async function addCustomFiles(fileList: FileList | File[], options: AddFilesOptions = {}) {
+    const files = Array.from(fileList)
+    const csvFiles = files.filter(isCsvFile)
+    let importedApplications: Record<string, ApplicationFields> = {}
+    let csvErrors: LabelItem[] = []
+
+    try {
+      importedApplications = await importCsvFiles(csvFiles)
+    } catch (error) {
+      csvErrors = csvFiles.map((file) => failedCsvItem(file, error))
+    }
+
+    const nextApplications = {
+      ...(options.replace ? {} : customApplicationByFileName),
+      ...importedApplications,
+    }
+    const nextItems = files
+      .filter((file) => !isCsvFile(file))
+      .map((file) =>
+        isSupportedImageFile(file)
+          ? makeFileItem(
+              file,
+              nextApplications,
+              options.applicationSource || 'csv',
+              options.progressText || 'Queued',
+            )
+          : unsupportedFileItem(file),
+      )
+      .concat(csvErrors)
+
+    if (csvFiles.length || options.replace) {
+      setCustomApplicationByFileName(nextApplications)
+    }
+
+    setCustomItems((current) => {
+      const updatedCurrent = options.replace
+        ? []
+        : current.map((item) => ({
+            ...item,
+            application: importedApplications[normalizeFileKey(item.name)] || item.application,
+            applicationSource: importedApplications[normalizeFileKey(item.name)]
+              ? options.applicationSource || 'csv'
+              : item.applicationSource,
+          }))
+
+      return [...updatedCurrent, ...nextItems]
+    })
+  }
+
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    if (event.target.files?.length) void addFiles(event.target.files)
+    if (event.target.files?.length) void addCustomFiles(event.target.files)
     event.target.value = ''
   }
 
@@ -578,11 +765,11 @@ function App() {
     const csv = await readTextFile(file)
     const importedApplications = csvToApplications(csv)
 
-    setApplicationByFileName((current) => ({
+    setCustomApplicationByFileName((current) => ({
       ...current,
       ...importedApplications,
     }))
-    setItems((current) =>
+    setCustomItems((current) =>
       current.map((item) => ({
         ...item,
         application:
@@ -597,12 +784,12 @@ function App() {
 
   function handleDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault()
-    if (event.dataTransfer.files.length) void addFiles(event.dataTransfer.files)
+    if (event.dataTransfer.files.length) void addCustomFiles(event.dataTransfer.files)
   }
 
   function loadSamples() {
     setApplication(DEFAULT_APPLICATION)
-    setItems((current) => [
+    setCustomItems((current) => [
       ...current,
       ...SAMPLE_LABELS.map((sample) => ({
         id: createId(),
@@ -622,7 +809,7 @@ function App() {
     const text = pastedText.trim()
     if (!text) return
 
-    setItems((current) => [
+    setCustomItems((current) => [
       ...current,
       {
         id: createId(),
@@ -638,12 +825,16 @@ function App() {
     setPastedText('')
   }
 
-  async function processItem(item: LabelItem) {
-    if (processingIds.current.has(item.id)) return
+  async function processItem(item: LabelItem, options: ProcessItemOptions = {}) {
+    const update = options.updateItem || updateItem
+    const processing = options.processingIds || processingIds
+    const fallbackApplication = options.fallbackApplication || application
 
-    processingIds.current.add(item.id)
+    if (processing.current.has(item.id)) return
+
+    processing.current.add(item.id)
     const startedAt = performance.now()
-    updateItem(item.id, {
+    update(item.id, {
       status: 'processing',
       progress: 0.05,
       progressText: item.rawText ? 'Reading text' : 'Starting AI extraction',
@@ -662,27 +853,43 @@ function App() {
 
         const extractionFile = item.file
         extracted = await extractWithOpenAI(extractionFile, (progress) => {
-          updateItem(item.id, {
+          update(item.id, {
             progress: Math.max(progress.progress, 0.05),
             progressText: progress.status,
           })
         })
       }
 
+      const shouldDraftApplication =
+        options.draftFromExtraction &&
+        !item.application &&
+        !hasApplicationData(fallbackApplication)
+      const comparisonApplication = shouldDraftApplication
+        ? applicationFromExtraction(extracted, fallbackApplication)
+        : item.application || fallbackApplication
+      const applicationSource: ApplicationSource =
+        item.applicationSource || (shouldDraftApplication ? 'extracted' : 'manual')
+
+      if (shouldDraftApplication) {
+        options.onDraftApplication?.(comparisonApplication)
+      }
+
       const result = verifyLabel(
         extracted,
-        item.application || application,
+        comparisonApplication,
         performance.now() - startedAt,
       )
 
-      updateItem(item.id, {
+      update(item.id, {
         status: 'complete',
         progress: 1,
         progressText: 'Analysis complete',
+        application: comparisonApplication,
+        applicationSource,
         result,
       })
     } catch (error) {
-      updateItem(item.id, {
+      update(item.id, {
         status: 'error',
         progress: 0,
         progressText: 'Extraction failed',
@@ -693,7 +900,7 @@ function App() {
             : 'AI extraction failed. Check the API configuration or retry.',
       })
     } finally {
-      processingIds.current.delete(item.id)
+      processing.current.delete(item.id)
     }
   }
 
@@ -702,22 +909,28 @@ function App() {
     retryItem(activeItem.id)
   }
 
-  async function verifyQueuedLabels() {
-    const queue = items.filter((item) => item.status === 'queued')
+  async function verifyCustomQueuedLabels() {
+    const queue = customItems.filter((item) => item.status === 'queued')
     if (!queue.length) return
 
     const workerCount = Math.min(BATCH_CONCURRENCY, queue.length)
     const workers = Array.from({ length: workerCount }, async (_, workerIndex) => {
       for (let index = workerIndex; index < queue.length; index += workerCount) {
-        await processItem(queue[index])
+        await processItem(queue[index], {
+          updateItem: updateCustomItem,
+          processingIds: customProcessingIds,
+          fallbackApplication: application,
+          draftFromExtraction: true,
+          onDraftApplication: setApplication,
+        })
       }
     })
 
     await Promise.all(workers)
   }
 
-  function recheckCompletedLabels() {
-    setItems((current) =>
+  function recheckCustomCompletedLabels() {
+    setCustomItems((current) =>
       current.map((item) => {
         if (!item.result) return item
 
@@ -733,59 +946,18 @@ function App() {
     )
   }
 
-  function clearQueue() {
-    items.forEach((item) => {
+  function clearCustomQueue() {
+    customItems.forEach((item) => {
       if (item.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl)
     })
-    setItems([])
-    setActiveItemId(undefined)
-    processingIds.current.clear()
+    setCustomItems([])
+    setCustomApplicationByFileName({})
+    setCustomResultFilter('all')
+    customProcessingIds.current.clear()
   }
 
-  function downloadCsv() {
-    const rows: Array<Array<string | number>> = [
-      [
-        'label',
-        'aiRecommendation',
-        'aiScore',
-        'durationMs',
-        'applicationSource',
-        'agentDecision',
-        'agentDecisionAt',
-        'check',
-        'check_status',
-        'expected',
-        'found',
-        'message',
-      ],
-    ]
-
-    items.forEach((item) => {
-      item.result?.checks.forEach((check) => {
-        rows.push([
-          item.name,
-          statusCopy[item.result.status],
-          item.result.score.toFixed(3),
-          Math.round(item.result.durationMs),
-          applicationSourceLabel(item.applicationSource),
-          item.humanDecision || '',
-          item.decidedAt || '',
-          check.label,
-          check.status,
-          check.expected,
-          check.found,
-          check.message,
-        ])
-      })
-    })
-
-    const csv = rows.map((row) => row.map(csvEscape).join(',')).join('\n')
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'label-verification-results.csv'
-    anchor.click()
-    URL.revokeObjectURL(url)
+  function downloadCustomCsv() {
+    downloadItemsCsv(customItems, 'custom-label-verification-results.csv')
   }
 
   return (
@@ -1008,7 +1180,7 @@ function App() {
             <button
               type="button"
               className="secondary-button"
-              onClick={() => setApplication(DEFAULT_APPLICATION)}
+              onClick={() => setApplication(EMPTY_APPLICATION)}
             >
               <RefreshCw size={18} />
               Reset
@@ -1028,17 +1200,21 @@ function App() {
               <button
                 type="button"
                 className="primary-button"
-                onClick={verifyQueuedLabels}
-                disabled={stats.queued === 0}
+                onClick={verifyCustomQueuedLabels}
+                disabled={customStats.queued === 0}
               >
-                {stats.processing > 0 ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
+                {customStats.processing > 0 ? (
+                  <Loader2 className="spin" size={18} />
+                ) : (
+                  <Play size={18} />
+                )}
                 Verify
               </button>
               <button
                 type="button"
                 className="secondary-button icon-only"
-                onClick={recheckCompletedLabels}
-                disabled={stats.reviewed === 0}
+                onClick={recheckCustomCompletedLabels}
+                disabled={customStats.reviewed === 0}
                 title="Recheck completed labels"
               >
                 <RefreshCw size={18} />
@@ -1046,8 +1222,8 @@ function App() {
               <button
                 type="button"
                 className="secondary-button icon-only"
-                onClick={downloadCsv}
-                disabled={stats.reviewed === 0}
+                onClick={downloadCustomCsv}
+                disabled={customStats.reviewed === 0}
                 title="Download CSV"
               >
                 <Download size={18} />
@@ -1055,8 +1231,8 @@ function App() {
               <button
                 type="button"
                 className="secondary-button icon-only danger"
-                onClick={clearQueue}
-                disabled={items.length === 0}
+                onClick={clearCustomQueue}
+                disabled={customItems.length === 0}
                 title="Clear batch"
               >
                 <Trash2 size={18} />
@@ -1102,7 +1278,7 @@ function App() {
               Import CSV
               <input type="file" accept=".csv,text/csv" onChange={handleCsvChange} />
             </label>
-            <span>{Object.keys(applicationByFileName).length} application records</span>
+            <span>{Object.keys(customApplicationByFileName).length} application records</span>
           </div>
 
           <div className="filter-row" aria-label="Result filters">
@@ -1111,27 +1287,27 @@ function App() {
                 type="button"
                 key={filter}
                 className={`filter-button ${
-                  resultFilter === filter ? 'filter-button--active' : ''
+                  customResultFilter === filter ? 'filter-button--active' : ''
                 }`}
-                onClick={() => setResultFilter(filter)}
+                onClick={() => setCustomResultFilter(filter)}
               >
                 {filter === 'all' ? 'All' : statusCopy[filter]}
               </button>
             ))}
             <span>
-              Showing {filteredItems.length} of {items.length}
+              Showing {filteredCustomItems.length} of {customItems.length}
             </span>
           </div>
 
           <div className="result-list" aria-live="polite">
-            {filteredItems.length === 0 ? (
+            {filteredCustomItems.length === 0 ? (
               <div className="empty-state">
                 <FileText size={28} aria-hidden="true" />
-                <p>{items.length === 0 ? 'No labels queued' : 'No matching labels'}</p>
+                <p>{customItems.length === 0 ? 'No custom labels queued' : 'No matching labels'}</p>
               </div>
             ) : (
-              filteredItems.map((item) => (
-                <ResultItem key={item.id} item={item} onRetry={retryItem} />
+              filteredCustomItems.map((item) => (
+                <ResultItem key={item.id} item={item} onRetry={retryCustomItem} />
               ))
             )}
           </div>

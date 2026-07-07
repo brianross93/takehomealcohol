@@ -11,6 +11,7 @@ Standalone prototype for reviewing alcohol beverage label artwork against applic
 - Processes queued uploads with a small concurrency pool, retry/backoff for transient API limits, and per-item results as soon as each label finishes.
 - Filters completed rows to `Ready`, `Review`, or `Missing` so agents can focus on exceptions in large batches.
 - Loads a provided review packet by default: application-form rows plus attached label images, routed through the same CSV/image import path as user uploads.
+- Keeps the custom upload panel empty by default so reviewers can test their own CSV/image packets without clearing the provided demo queue.
 - Prefetches the current form plus the next two labels, so the reviewer can inspect the form and artwork while AI analysis completes in the background.
 - Lets the human reviewer record an `Accept` or `Reject` decision, keeps that separate from the AI recommendation, and automatically advances to the next form.
 - Supports `A`/Right Arrow for accept and `R`/Left Arrow for reject in the one-by-one review queue.
@@ -34,9 +35,9 @@ Open `https://alcoholclassifier.netlify.app`. The app starts with a provided rev
 
 If the reviewer clicks faster than prefetch finishes, the next form and label still open immediately and the checklist area briefly shows an analyzing state. The agent is never blocked from seeing the submission.
 
-The provided packet is also available as `public/preloaded-submissions/application-records.csv` with matching images in `public/preloaded-submissions/`. Reviewers can clear the queue and click `Provided forms` to reload it. That button fetches the bundled CSV and image files, converts them to browser `File` objects, and passes them through the same import machinery used by custom uploads. Reviewers can also upload their own CSV and images; the CSV `fileName` column should match the image filenames.
+The provided packet is also available as `public/preloaded-submissions/application-records.csv` with matching images in `public/preloaded-submissions/`. Reviewers can click `Provided forms` to reload the top review queue. The custom upload panel below remains separate and starts empty for reviewer-supplied files.
 
-The custom upload path is intentionally secondary to the assignment scenario. It is still useful for trying new labels: upload a label image with a matching CSV row, or enter expected values in the manual application form. The app then uses the same extractor and field checks against that supplied application data. Without application data, the tool can still surface label text and warning issues, but it cannot prove that brand, class/type, ABV, net contents, bottler, or country of origin match an application.
+The custom upload path is intentionally secondary to the assignment scenario. It is still useful for trying new labels: upload label images with a matching CSV row, or enter expected values in the manual application form. If a reviewer uploads an image without CSV/manual application data, the app drafts an application record from the extracted label fields and marks the source as `Extracted draft`; that is useful for exploring extraction quality, while CSV/manual application data remains the path for true form-vs-label comparison.
 
 ## Running Locally
 
@@ -89,7 +90,7 @@ fileName,brandName,classType,alcoholContent,netContents,bottlerName,bottlerAddre
 old-tom.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,Old Tom Distillery,"Louisville, KY",United States,Distilled Spirits
 ```
 
-Rows without a matching CSV record use the manual application form. The results CSV includes whether the application record came from CSV or manual entry. PNG, JPG, and WEBP labels are extractable in the prototype; PDF and HEIC/HEIF files are accepted by the uploader but produce an explicit unsupported-format queue error so agents know to convert them rather than receiving misleading compliance failures.
+Rows without a matching CSV record use the manual application form when it contains data. If the manual form is blank, custom image uploads create an `Extracted draft` application from the label image and populate the form fields for inspection. The results CSV includes whether the application record came from CSV, manual entry, provided demo data, or an extracted draft. PNG, JPG, and WEBP labels are extractable in the prototype; PDF and HEIC/HEIF files are accepted by the uploader but produce an explicit unsupported-format queue error so agents know to convert them rather than receiving misleading compliance failures.
 
 The results CSV records both sides of the review: `aiRecommendation` is the classifier's `Ready`/`Review`/`Missing` triage, while `agentDecision` and `agentDecisionAt` capture the human Accept/Reject action and timestamp. In production, disagreements between those columns would be useful audit data and a natural source for regression tests or model-improvement review.
 
@@ -100,7 +101,7 @@ The results CSV records both sides of the review: `aiRecommendation` is the clas
 - `src/lib/aiExtraction.ts` retries rate-limited or transient extraction failures and honors `Retry-After`.
 - `src/lib/verification.ts` contains the deterministic review engine. Required fields use a green/yellow/red model: green means the label appears to match the application, yellow means the field is present but differs or needs human attention, and red means the required field was not found.
 - Alcohol content includes an internal ABV/proof consistency check, so a label that prints `45% Alc./Vol.` and an inconsistent proof value is flagged for agent review even if the ABV alone matches the application.
-- `src/App.tsx` provides the agent-facing workflow: application record, one-by-one review queue, prefetching, custom upload batch, status summary, explanations, extracted label text, and CSV export.
+- `src/App.tsx` provides the agent-facing workflow: application record, one-by-one provided review queue, prefetching, separate custom upload batch, extracted-draft form population, status summary, explanations, extracted label text, and CSV export.
 - `public/samples/` contains two generated sample labels: one compliant and one intentionally defective.
 
 The health warning rule is based on TTB guidance for beverage alcohol labels, including the current TTB pages for [distilled spirits health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/distilled-spirits/ds-labeling-home/ds-health-warning) and [malt beverage health warnings](https://www.ttb.gov/regulated-commodities/beverage-alcohol/beer/labeling/malt-beverage-health-warning).
