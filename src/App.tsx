@@ -192,7 +192,7 @@ function App() {
   const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
 
   useEffect(() => {
-    void fetch('/api/extract-label', { method: 'HEAD' }).catch(() => undefined)
+    void fetch('/api/extract-label?warmup=1').catch(() => undefined)
   }, [])
 
   const stats = useMemo(() => {

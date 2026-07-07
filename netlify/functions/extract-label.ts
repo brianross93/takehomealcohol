@@ -8,6 +8,7 @@ type LabelExtractionPayload = {
 type NetlifyEvent = {
   httpMethod: string
   body: string | null
+  queryStringParameters?: Record<string, string | undefined> | null
 }
 
 type NetlifyResponse = {
@@ -118,7 +119,10 @@ function extractionDetail(): ImageDetail {
 }
 
 export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
-  if (event.httpMethod === 'HEAD') {
+  if (
+    event.httpMethod === 'HEAD' ||
+    (event.httpMethod === 'GET' && event.queryStringParameters?.warmup === '1')
+  ) {
     return {
       statusCode: 204,
       headers: { 'Content-Type': 'application/json' },
